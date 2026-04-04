@@ -6,7 +6,6 @@ from typing import AsyncGenerator
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.models.base import Base
@@ -30,7 +29,7 @@ def pytest_configure(config):
     logging.Logger._log = patched_log
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def engine():
     """Create async SQLAlchemy engine with PostgreSQL for integration tests."""
     engine = create_async_engine(
@@ -49,29 +48,6 @@ async def engine():
         await conn.run_sync(Base.metadata.drop_all)
 
     await engine.dispose()
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def clean_database(engine):
-    """Clean all tables before each test to ensure isolation."""
-    async with engine.begin() as conn:
-        # Disable foreign key checks temporarily
-        await conn.execute(text("SET CONSTRAINTS ALL DEFERRED"))
-        # Truncate all tables in reverse dependency order
-        tables = [
-            "delivery_attempts",
-            "tool_calls",
-            "messages",
-            "conversations",
-            "prompts",
-        ]
-        for table in tables:
-            try:
-                await conn.execute(text(f"TRUNCATE TABLE {table} CASCADE"))
-            except Exception:
-                pass
-
-    yield
 
 
 @pytest_asyncio.fixture
