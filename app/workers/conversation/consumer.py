@@ -52,7 +52,7 @@ class ConversationConsumer:
             },
         )
 
-        logger.info("consumer_started", queue=QUEUE_NAME, prefetch=QUEUE_PREFETCH)
+        logger.info("consumer_started", extra={"queue": QUEUE_NAME, "prefetch": QUEUE_PREFETCH})
 
         await self._queue.consume(self._on_message)
 
@@ -73,26 +73,23 @@ class ConversationConsumer:
                 payload = json.loads(message.body.decode())
                 logger.info(
                     "message_received",
-                    correlation_id=correlation_id,
-                    queue=QUEUE_NAME,
+                    extra={"correlation_id": correlation_id, "queue": QUEUE_NAME},
                 )
 
                 await self._processor.process(payload, correlation_id)
 
                 logger.info(
                     "ack_sent",
-                    correlation_id=correlation_id,
+                    extra={"correlation_id": correlation_id},
                 )
 
             except json.JSONDecodeError as e:
                 logger.error(
                     "message_parse_error",
-                    correlation_id=correlation_id,
-                    error=str(e),
-                    error_type="JSONDecodeError",
+                    extra={"correlation_id": correlation_id, "error": str(e), "error_type": "JSONDecodeError"},
                 )
                 # Permanent error: ack to send to DLQ
-                logger.info("ack_sent_dlq", correlation_id=correlation_id)
+                logger.info("ack_sent_dlq", extra={"correlation_id": correlation_id})
 
             except Exception as e:
                 error_type = type(e).__name__
@@ -100,19 +97,16 @@ class ConversationConsumer:
 
                 logger.error(
                     "message_processing_error",
-                    correlation_id=correlation_id,
-                    error=str(e),
-                    error_type=error_type,
-                    transient=is_transient,
+                    extra={"correlation_id": correlation_id, "error": str(e), "error_type": error_type, "transient": is_transient},
                 )
 
                 if is_transient:
                     # Requeue for transient errors
                     await message.nack(requeue=True)
-                    logger.info("nack_sent_requeue", correlation_id=correlation_id)
+                    logger.info("nack_sent_requeue", extra={"correlation_id": correlation_id})
                 else:
                     # Permanent error: ack (will go to DLQ)
-                    logger.info("ack_sent_dlq", correlation_id=correlation_id)
+                    logger.info("ack_sent_dlq", extra={"correlation_id": correlation_id})
 
     async def close(self) -> None:
         """Close connections gracefully."""

@@ -19,9 +19,10 @@ class APISettings(BaseSettings):
     # Zalo OA
     zalo_app_id: str = ""
     zalo_app_secret: str = ""
-    zalo_access_token: str = ""
     zalo_webhook_secret: str = ""
     zalo_oa_id: str = ""
+    zalo_callback_url: str = ""  # e.g., "https://your-domain.com" or "http://localhost:8000"
+    zalo_code_verifier: str = ""  # PKCE code verifier, generate via: python -m app.api.scripts.generate_pkce
 
     # LLM
     anthropic_api_key: str = ""

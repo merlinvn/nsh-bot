@@ -9,9 +9,9 @@ x-common-env: &common-env
   RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
   ZALO_APP_ID: ${ZALO_APP_ID:-}
   ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
-  ZALO_ACCESS_TOKEN: ${ZALO_ACCESS_TOKEN:-}
   ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
   ZALO_OA_ID: ${ZALO_OA_ID:-}
+  ZALO_CALLBACK_URL: ${ZALO_CALLBACK_URL:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
   LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
@@ -85,6 +85,8 @@ services:
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       <<: *common-env
       LOG_LEVEL: DEBUG
@@ -111,6 +113,8 @@ services:
     command: python -m app.workers.conversation.main
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
       <<: *worker-env
       WORKER_METRICS_PORT: "8080"
@@ -129,6 +133,8 @@ services:
     command: python -m app.workers.outbound.main
     ports:
       - "8081:8081"
+    env_file:
+      - .env
     environment:
       <<: *worker-env
       WORKER_METRICS_PORT: "8081"

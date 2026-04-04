@@ -100,6 +100,8 @@ Internal: conversation management, replay, prompt activation
 - Mask PII in logs
 - Validate all webhook input
 - All Zalo API calls go through outbound worker (never directly from webhook)
+- **LLM Tool Format**: OpenAI-compatible LLM clients use `{"type": "function", "function": {...}}` format, NOT Anthropic's `{"name": ..., "input_schema": ...}`. The `OpenAICompatLLM._convert_tools()` method handles this conversion.
+- **Zalo Token**: If Zalo returns `-216 Access token is invalid`, the token was revoked server-side. Update via script: `docker-compose exec -T api uv run python app/api/scripts/update_zalo_token.py --access-token "token"`
 
 ## Testing
 

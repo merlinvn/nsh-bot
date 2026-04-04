@@ -18,9 +18,10 @@ from app.workers.outbound.zalo_client import NonRetryableError, RetryableError
 @pytest.fixture
 def message_payload() -> dict:
     return {
-        "user_id": "user_123",
+        "external_user_id": "user_123",
         "text": "Hello world",
-        "message_db_id": str(uuid4()),
+        "message_id": str(uuid4()),
+        "outbound_message_id": str(uuid4()),
     }
 
 
@@ -66,7 +67,7 @@ async def test_success_on_first_attempt(message_payload: dict, mock_db_session: 
         await process_outbound(message_payload)
 
     mock_instance.send_text.assert_called_once_with(
-        message_payload["user_id"], message_payload["text"]
+        message_payload["external_user_id"], message_payload["text"]
     )
     assert mock_db_session.execute.call_count == 1
     stmt = mock_db_session.execute.call_args.args[0]

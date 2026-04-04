@@ -52,9 +52,9 @@ class ZaloClient:
             RetryableError: On HTTP 429, 5xx, or network timeout
             NonRetryableError: On HTTP 4xx (except 429)
         """
-        url = f"{self.base_url}/v3.0/oa/message/text"
+        url = f"{self.base_url}/v3.0/oa/message/cs"
         headers = {
-            "Authorization": f"Bearer {self.access_token}",
+            "access_token": self.access_token,
             "Content-Type": "application/json",
         }
         payload = {
@@ -75,8 +75,26 @@ class ZaloClient:
 
         if status == 200:
             result = response.json()
-            logger.info("Zalo message sent", extra={"user_id": user_id})
-            return result
+            # Zalo returns {"error": 0, "message": "Success"} on success
+            # or {"error": <code>, "message": "<error_message>"} on failure
+            error_code = result.get("error")
+            if error_code == 0:
+                logger.info("Zalo message sent", extra={"user_id": user_id})
+                return result
+            elif error_code is not None:
+                error_msg = result.get("message", "Unknown error")
+                logger.error(
+                    "Zalo API error",
+                    extra={"user_id": user_id, "error_code": error_code, "error_msg": error_msg},
+                )
+                # Error codes that mean we should retry
+                if error_code in (-216, -1002):  # Token invalid/expired, rate limit
+                    raise RetryableError(f"Token invalid ({error_code})")
+                raise NonRetryableError(f"Zalo error {error_code}: {error_msg}")
+            else:
+                # Unexpected response format - treat as success
+                logger.info("Zalo message sent", extra={"user_id": user_id, "result": str(result)[:100]})
+                return result
 
         if status == 429:
             logger.warning("Zalo rate limited", extra={"user_id": user_id})

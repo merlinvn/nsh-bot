@@ -15,12 +15,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from app.workers.conversation.consumer import ConversationConsumer
-from app.workers.shared.logging import get_logger
+from app.workers.shared.logging import get_logger, setup_logging
 
 logger = get_logger("conversation-worker")
 
 
 def main() -> None:
+    # Setup structured logging first
+    from app.core.config import get_settings
+    settings = get_settings()
+    setup_logging(settings.log_level)
+
     shutdown_event = asyncio.Event()
 
     def handle_signal(signum: int, frame) -> None:
@@ -29,6 +34,8 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
+
+    logger.info("Starting conversation worker")
 
     try:
         asyncio.run(run_consumer(shutdown_event))

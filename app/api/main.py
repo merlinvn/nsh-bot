@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.config import api_settings
 from app.api.middleware import PIIMaskingFilter, RequestIDMiddleware, StructuredLoggingMiddleware
-from app.api.routers import health_router, internal_router, webhooks_router
+from app.api.routers import auth_router, health_router, internal_router, webhooks_router
 from app.core.rabbitmq import close_rabbitmq, get_rabbitmq_channel
 from app.core.redis import close_redis_client
 
@@ -75,6 +75,7 @@ app.add_middleware(RequestIDMiddleware)
 app.include_router(webhooks_router)
 app.include_router(health_router)
 app.include_router(internal_router)
+app.include_router(auth_router)
 
 
 # ---------- Exception handlers ----------

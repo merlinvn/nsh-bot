@@ -158,6 +158,7 @@ curl -X POST \
 - Refresh token expires in 3 months
 - Refresh token can only be used **ONCE** - each refresh returns a new refresh token
 - The system automatically handles refresh when tokens expire
+- If token is revoked/invalid, manually update via script (see Token issues section)
 
 #### Token Refresh (Automatic)
 
@@ -296,6 +297,12 @@ docker-compose -f docker-compose.dev.yml exec postgres psql -U neochat -d neocha
 
 # Verify token in .env matches database
 docker-compose -f docker-compose.dev.yml exec postgres psql -U neochat -d neochat -c "SELECT substring(access_token, 1, 20) || '...' FROM zalo_tokens;"
+
+# Manually update tokens (run inside Docker):
+docker-compose -f docker-compose.dev.yml exec -T api uv run python app/api/scripts/update_zalo_token.py \
+  --access-token "new_access_token" \
+  --refresh-token "new_refresh_token" \
+  --expires-in 86400
 ```
 
 **Database issues:**

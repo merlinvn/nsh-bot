@@ -95,13 +95,7 @@ class AnthropicLLM(BaseLLM):
 
             logger.info(
                 "llm_response_received",
-                provider="anthropic",
-                model=self._model,
-                latency_ms=latency_ms,
-                has_text=bool(text),
-                tool_call_count=len(tool_calls),
-                input_tokens=token_usage.get("input_tokens") if token_usage else None,
-                output_tokens=token_usage.get("output_tokens") if token_usage else None,
+                extra={"provider": "anthropic", "model": self._model, "latency_ms": latency_ms, "has_text": bool(text), "tool_call_count": len(tool_calls), "input_tokens": token_usage.get("input_tokens") if token_usage else None, "output_tokens": token_usage.get("output_tokens") if token_usage else None},
             )
 
             return LLMResponse(
@@ -115,10 +109,7 @@ class AnthropicLLM(BaseLLM):
             latency_ms = int((time.time() - start_time) * 1000)
             logger.error(
                 "llm_timeout",
-                provider="anthropic",
-                model=self._model,
-                timeout=self.timeout,
-                latency_ms=latency_ms,
+                extra={"provider": "anthropic", "model": self._model, "timeout": self.timeout, "latency_ms": latency_ms},
             )
             raise TimeoutError(f"LLM call timed out after {self.timeout}s")
 
@@ -126,11 +117,7 @@ class AnthropicLLM(BaseLLM):
             latency_ms = int((time.time() - start_time) * 1000)
             logger.error(
                 "llm_error",
-                provider="anthropic",
-                model=self._model,
-                error=str(e),
-                error_type=type(e).__name__,
-                latency_ms=latency_ms,
+                extra={"provider": "anthropic", "model": self._model, "error": str(e), "error_type": type(e).__name__, "latency_ms": latency_ms},
             )
             raise
 
@@ -158,6 +145,24 @@ class OpenAICompatLLM(BaseLLM):
     def model(self) -> str:
         return self._model
 
+    def _convert_tools(self, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert Anthropic-format tools to OpenAI-format.
+
+        Anthropic: {"name": "...", "description": "...", "input_schema": {...}}
+        OpenAI: {"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}
+        """
+        converted = []
+        for tool in tools:
+            converted.append({
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "parameters": tool.get("input_schema", {"type": "object", "properties": {}}),
+                },
+            })
+        return converted
+
     async def complete(
         self,
         system_prompt: str,
@@ -178,9 +183,9 @@ class OpenAICompatLLM(BaseLLM):
             "max_tokens": 1024,
         }
 
-        # Add tools if provided
+        # Add tools if provided (convert Anthropic format to OpenAI format)
         if tools:
-            payload["tools"] = tools
+            payload["tools"] = self._convert_tools(tools)
             # OpenAI uses tools_output in response
             payload["tool_choice"] = "auto"
 
@@ -237,13 +242,7 @@ class OpenAICompatLLM(BaseLLM):
 
             logger.info(
                 "llm_response_received",
-                provider="openai-compat",
-                model=self._model,
-                latency_ms=latency_ms,
-                has_text=bool(text),
-                tool_call_count=len(tool_calls),
-                input_tokens=token_usage.get("input_tokens") if token_usage else None,
-                output_tokens=token_usage.get("output_tokens") if token_usage else None,
+                extra={"provider": "openai-compat", "model": self._model, "latency_ms": latency_ms, "has_text": bool(text), "tool_call_count": len(tool_calls), "input_tokens": token_usage.get("input_tokens") if token_usage else None, "output_tokens": token_usage.get("output_tokens") if token_usage else None},
             )
 
             return LLMResponse(
@@ -257,10 +256,7 @@ class OpenAICompatLLM(BaseLLM):
             latency_ms = int((time.time() - start_time) * 1000)
             logger.error(
                 "llm_timeout",
-                provider="openai-compat",
-                model=self._model,
-                timeout=self.timeout,
-                latency_ms=latency_ms,
+                extra={"provider": "openai-compat", "model": self._model, "timeout": self.timeout, "latency_ms": latency_ms},
             )
             raise TimeoutError(f"LLM call timed out after {self.timeout}s")
 
@@ -268,11 +264,7 @@ class OpenAICompatLLM(BaseLLM):
             latency_ms = int((time.time() - start_time) * 1000)
             logger.error(
                 "llm_error",
-                provider="openai-compat",
-                model=self._model,
-                error=str(e),
-                error_type=type(e).__name__,
-                latency_ms=latency_ms,
+                extra={"provider": "openai-compat", "model": self._model, "error": str(e), "error_type": type(e).__name__, "latency_ms": latency_ms},
             )
             raise
 

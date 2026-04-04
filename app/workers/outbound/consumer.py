@@ -51,7 +51,7 @@ async def handle_message(message: IncomingMessage) -> None:
         return
 
     correlation_id = message.headers.get("correlation_id") if message.headers else None
-    delivery_tag = message.delivery.tag
+    delivery_tag = message.delivery_tag
 
     logger.info(
         "Received outbound message",

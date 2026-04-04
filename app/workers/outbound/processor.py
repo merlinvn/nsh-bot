@@ -23,7 +23,7 @@ BACKOFF_BASE = 2.0
 
 
 async def save_delivery_attempt(
-    message_db_id: UUID,
+    message_db_id: str,
     attempt_no: int,
     status: str,
     response: dict | None = None,
@@ -32,7 +32,7 @@ async def save_delivery_attempt(
     """Save a delivery attempt record to the database."""
     async with db_session() as session:
         stmt = insert(DeliveryAttempt).values(
-            message_id=message_db_id,
+            message_id=UUID(message_db_id) if message_db_id else None,
             attempt_no=attempt_no,
             status=status,
             response=response,
@@ -54,18 +54,19 @@ async def process_outbound(message: dict) -> None:
     Process an outbound message with retry logic.
 
     Args:
-        message: Dict with keys: user_id (str), text (str), message_db_id (UUID)
+        message: Dict with keys: external_user_id (str), text (str), message_id (str), outbound_message_id (str), etc.
 
     Raises:
         RetryableError: If max retries exhausted (caller should send to DLQ)
     """
-    user_id: str = message["user_id"]
+    user_id: str = message["external_user_id"]
     text: str = message["text"]
-    message_db_id: UUID = UUID(message["message_db_id"])
+    message_id: str = message["message_id"]
+    outbound_message_id: str = message.get("outbound_message_id", "")
 
     logger.info(
         "Processing outbound message",
-        extra={"user_id": user_id, "message_db_id": str(message_db_id)},
+        extra={"user_id": user_id, "message_id": message_id, "outbound_message_id": outbound_message_id},
     )
 
     # Get fresh access token (auto-refreshes if expired)
@@ -86,13 +87,13 @@ async def process_outbound(message: dict) -> None:
         try:
             result = await zalo_client.send_text(user_id, text)
             await save_delivery_attempt(
-                message_db_id, attempt, "success", response=result
+                outbound_message_id, attempt, "success", response=result
             )
             logger.info(
                 "Outbound delivered",
                 extra={
                     "user_id": user_id,
-                    "message_db_id": str(message_db_id),
+                    "outbound_message_id": outbound_message_id,
                     "attempt": attempt,
                 },
             )
@@ -101,7 +102,7 @@ async def process_outbound(message: dict) -> None:
         except RetryableError as e:
             last_error = str(e)
             await save_delivery_attempt(
-                message_db_id, attempt, "failed", error=str(e)
+                outbound_message_id, attempt, "failed", error=str(e)
             )
 
             # Check if token expired (401) - refresh and retry
@@ -135,7 +136,7 @@ async def process_outbound(message: dict) -> None:
                     "Max retries exhausted, sending to DLQ",
                     extra={
                         "user_id": user_id,
-                        "message_db_id": str(message_db_id),
+                        "outbound_message_id": outbound_message_id,
                         "error": str(e),
                     },
                 )
@@ -144,14 +145,14 @@ async def process_outbound(message: dict) -> None:
         except NonRetryableError as e:
             last_error = str(e)
             await save_delivery_attempt(
-                message_db_id, attempt, "failed", error=str(e)
+                outbound_message_id, attempt, "failed", error=str(e)
             )
             logger.error(
                 "Non-retryable error",
-                extra={"user_id": user_id, "message_db_id": str(message_db_id), "error": str(e)},
+                extra={"user_id": user_id, "outbound_message_id": outbound_message_id, "error": str(e)},
             )
             return
 
     # Should not reach here, but safety fallback
-    await save_delivery_attempt(message_db_id, MAX_RETRIES, "failed", error=last_error)
+    await save_delivery_attempt(outbound_message_id, MAX_RETRIES, "failed", error=last_error)
     raise RetryableError(f"Max retries exhausted: {last_error}")

@@ -102,7 +102,7 @@ async def test_correct_headers_and_body(client: ZaloClient) -> None:
     call_args = captured_post.call_args
 
     # Verify URL
-    assert call_args.args[0] == "https://openapi.zalo.me/v3.0/oa/message/text"
+    assert call_args.args[0] == "https://openapi.zalo.me/v3.0/oa/message/cs"
 
     # Verify headers
     headers = call_args.kwargs.get("headers", {})

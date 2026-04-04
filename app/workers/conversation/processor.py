@@ -65,6 +65,8 @@ class ConversationProcessor:
         outbound_text: Optional[str] = None
         outbound_message: Optional[Message] = None
         error: Optional[str] = None
+        conversation_id_str: str = ""
+        outbound_message_id_str: str = ""
 
         try:
             async with db_session() as db:
@@ -72,8 +74,7 @@ class ConversationProcessor:
                 conversation = await self._load_or_create_conversation(db, external_user_id)
                 logger.info(
                     "conversation_loaded",
-                    correlation_id=correlation_id,
-                    conversation_id=str(conversation.id),
+                    extra={"correlation_id": correlation_id, "conversation_id": str(conversation.id)},
                 )
 
                 # Step 2: Save inbound message to DB
@@ -91,8 +92,7 @@ class ConversationProcessor:
 
                 logger.info(
                     "inbound_message_saved",
-                    correlation_id=correlation_id,
-                    inbound_message_id=str(inbound_msg.id),
+                    extra={"correlation_id": correlation_id, "inbound_message_id": str(inbound_msg.id)},
                 )
 
                 # Step 3: Build prompt and call LLM
@@ -129,27 +129,57 @@ class ConversationProcessor:
                 await db.commit()
                 await db.refresh(outbound_message)
 
+                # Extract IDs before session closes
+                conversation_id_str = str(conversation.id)
+                outbound_message_id_str = str(outbound_message.id)
                 logger.info(
                     "outbound_message_saved",
-                    correlation_id=correlation_id,
-                    outbound_message_id=str(outbound_message.id),
+                    extra={"correlation_id": correlation_id, "outbound_message_id": outbound_message_id_str},
                 )
 
         except Exception as e:
             error = str(e)
             logger.error(
                 "processing_error",
-                correlation_id=correlation_id,
-                error=error,
-                error_type=type(e).__name__,
-                processing_time_ms=int((time.time() - start_time) * 1000),
+                extra={"correlation_id": correlation_id, "error": error, "error_type": type(e).__name__, "processing_time_ms": int((time.time() - start_time) * 1000)},
             )
             outbound_text = FALLBACK_TEXT
             logger.info(
                 "fallback_triggered",
-                correlation_id=correlation_id,
-                reason=error,
+                extra={"correlation_id": correlation_id, "reason": error},
             )
+
+        # Step 4b: Save outbound message to DB (even on fallback)
+        # This ensures we have a valid outbound_message_id for delivery tracking
+        if not outbound_message_id_str:
+            try:
+                async with db_session() as db:
+                    # Use conversation_id_str if available, otherwise None
+                    from uuid import UUID
+                    conv_id = UUID(conversation_id_str) if conversation_id_str else None
+                    outbound_message = Message(
+                        conversation_id=conv_id,
+                        direction="outbound",
+                        text=outbound_text or FALLBACK_TEXT,
+                        message_id=f"{zalo_message_id}-out",
+                        prompt_version=self._prompt_manager.get_active_version(),
+                        model="fallback",
+                        latency_ms=0,
+                        token_usage=None,
+                    )
+                    db.add(outbound_message)
+                    await db.commit()
+                    await db.refresh(outbound_message)
+                    outbound_message_id_str = str(outbound_message.id)
+                    logger.info(
+                        "fallback_outbound_message_saved",
+                        extra={"correlation_id": correlation_id, "outbound_message_id": outbound_message_id_str},
+                    )
+            except Exception as save_err:
+                logger.error(
+                    "fallback_outbound_save_error",
+                    extra={"correlation_id": correlation_id, "error": str(save_err)},
+                )
 
         # Step 5: Publish to outbound.send queue
         try:
@@ -158,22 +188,18 @@ class ConversationProcessor:
                 external_user_id=external_user_id,
                 text=outbound_text or FALLBACK_TEXT,
                 correlation_id=correlation_id,
-                conversation_id=str(conversation.id) if conversation else "",
-                outbound_message_id=str(outbound_message.id) if outbound_message else "",
+                conversation_id=conversation_id_str,
+                outbound_message_id=outbound_message_id_str,
             )
 
             logger.info(
                 "response_published",
-                correlation_id=correlation_id,
-                conversation_id=str(conversation.id) if conversation else None,
-                processing_time_ms=int((time.time() - start_time) * 1000),
+                extra={"correlation_id": correlation_id, "conversation_id": conversation_id_str or None, "processing_time_ms": int((time.time() - start_time) * 1000)},
             )
         except Exception as e:
             logger.error(
                 "outbound_publish_error",
-                correlation_id=correlation_id,
-                error=str(e),
-                error_type=type(e).__name__,
+                extra={"correlation_id": correlation_id, "error": str(e), "error_type": type(e).__name__},
             )
             # Don't fail the processing — message was already saved to DB
             # and will need manual intervention
@@ -200,7 +226,7 @@ class ConversationProcessor:
             await db.refresh(conversation)
             logger.info(
                 "conversation_created",
-                conversation_key=conversation_key,
+                extra={"conversation_key": conversation_key},
             )
 
         return conversation
@@ -244,9 +270,7 @@ class ConversationProcessor:
         for step in range(MAX_LLM_STEPS):
             logger.info(
                 "llm_call_start",
-                correlation_id=correlation_id,
-                step=step + 1,
-                max_steps=MAX_LLM_STEPS,
+                extra={"correlation_id": correlation_id, "step": step + 1, "max_steps": MAX_LLM_STEPS},
             )
 
             response = await llm.complete(
@@ -257,10 +281,7 @@ class ConversationProcessor:
 
             logger.info(
                 "llm_call_end",
-                correlation_id=correlation_id,
-                step=step + 1,
-                latency_ms=response.latency_ms,
-                has_tool_calls=len(response.tool_calls) > 0,
+                extra={"correlation_id": correlation_id, "step": step + 1, "latency_ms": response.latency_ms, "has_tool_calls": len(response.tool_calls) > 0},
             )
 
             # Add assistant response to messages
@@ -289,9 +310,7 @@ class ConversationProcessor:
                 tool_start = time.time()
                 logger.info(
                     "tool_call_start",
-                    correlation_id=correlation_id,
-                    tool_name=tc.name,
-                    tool_input=tc.input,
+                    extra={"correlation_id": correlation_id, "tool_name": tc.name, "tool_input": tc.input},
                 )
 
                 try:
@@ -312,10 +331,7 @@ class ConversationProcessor:
                     tool_latency = int((time.time() - tool_start) * 1000)
                     logger.info(
                         "tool_call_end",
-                        correlation_id=correlation_id,
-                        tool_name=tc.name,
-                        success=True,
-                        latency_ms=tool_latency,
+                        extra={"correlation_id": correlation_id, "tool_name": tc.name, "success": True, "latency_ms": tool_latency},
                     )
 
                     # Append tool result to messages for next LLM call
@@ -332,11 +348,7 @@ class ConversationProcessor:
                     tool_latency = int((time.time() - tool_start) * 1000)
                     logger.error(
                         "tool_call_error",
-                        correlation_id=correlation_id,
-                        tool_name=tc.name,
-                        error=str(e),
-                        error_type=type(e).__name__,
-                        latency_ms=tool_latency,
+                        extra={"correlation_id": correlation_id, "tool_name": tc.name, "error": str(e), "error_type": type(e).__name__, "latency_ms": tool_latency},
                     )
 
                     # Save failed tool call to DB
