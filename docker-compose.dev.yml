@@ -1,0 +1,90 @@
+version: "3.9"
+
+includes:
+  - docker-compose.base.yml
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *common-env
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./app:/app/app:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  conversation-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.conversation-worker
+    command: python -m app.workers.conversation.main
+    ports:
+      - "8080:8080"
+    environment:
+      <<: *worker-env
+      WORKER_METRICS_PORT: "8080"
+    volumes:
+      - ./app:/app/app:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  outbound-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.outbound-worker
+    command: python -m app.workers.outbound.main
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *worker-env
+      WORKER_METRICS_PORT: "8081"
+    volumes:
+      - ./app:/app/app:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

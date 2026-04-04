@@ -42,4 +42,15 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 15
 
 
-settings = Settings()
+_settings_instance: Settings | None = None
+
+
+def get_settings() -> Settings:
+    """Get or create the singleton settings instance."""
+    global _settings_instance
+    if _settings_instance is None:
+        _settings_instance = Settings()
+    return _settings_instance
+
+
+settings = get_settings()

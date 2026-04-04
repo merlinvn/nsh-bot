@@ -1,0 +1,73 @@
+version: "3.9"
+
+x-common-env: &common-env
+  POSTGRES_DB: ${POSTGRES_DB:-neochat}
+  POSTGRES_USER: ${POSTGRES_USER:-neochat}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://neochat:changeme@postgres:5432/neochat}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+  ZALO_APP_ID: ${ZALO_APP_ID:-}
+  ZALO_APP_SECRET: ${ZALO_APP_SECRET:-}
+  ZALO_ACCESS_TOKEN: ${ZALO_ACCESS_TOKEN:-}
+  ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
+  ZALO_OA_ID: ${ZALO_OA_ID:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+  INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-*}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-100}
+  CONTEXT_WINDOW_SIZE: ${CONTEXT_WINDOW_SIZE:-10}
+  MAX_TOOL_CALLS: ${MAX_TOOL_CALLS:-2}
+  LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-15}
+
+x-worker-env: &worker-env
+  <<: *common-env
+  WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-8080}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-neochat}
+      POSTGRES_USER: ${POSTGRES_USER:-neochat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - neochat_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neochat} -d ${POSTGRES_DB:-neochat}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - neochat_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - neochat_rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  neochat_db:
+  neochat_redis:
+  neochat_rabbitmq:

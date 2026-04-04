@@ -1,0 +1,73 @@
+version: "3.9"
+
+includes:
+  - docker-compose.base.yml
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *common-env
+      DATABASE_URL: postgresql+asyncpg://neochat:changeme@postgres:5432/neochat
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  test:
+    image: python:3.11-slim
+    working_dir: /app
+    command: >
+      sh -c "pip install uv && uv sync && alembic upgrade head && uv run pytest tests/ -v --tb=short"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://neochat:changeme@postgres:5432/neochat
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: claude-sonnet-4-20250514
+      ZALO_APP_ID: test_app_id
+      ZALO_APP_SECRET: test_app_secret
+      ZALO_ACCESS_TOKEN: test_token
+      ZALO_WEBHOOK_SECRET: test_webhook_secret
+      ZALO_OA_ID: test_oa_id
+      INTERNAL_API_KEY: test_internal_key
+      LOG_LEVEL: DEBUG
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      api:
+        condition: service_healthy
