@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from app.core.config import get_settings
 from app.workers.outbound.consumer import OUTBOUND_QUEUE, run_consumer, shutdown_consumer
 from app.workers.shared.logging import get_logger, set_correlation_id, setup_logging
+from app.workers.shared.zalo_token_manager import get_zalo_token_manager
 
 settings = get_settings()
 logger: object | None = None
@@ -61,6 +62,10 @@ async def main() -> None:
 
     # Ensure correlation ID is set for this worker run
     set_correlation_id(settings.zalo_oa_id or "outbound-worker")
+
+    # Initialize Zalo token storage from static env var (one-time setup)
+    token_manager = get_zalo_token_manager()
+    await token_manager.initialize_from_static_token()
 
     try:
         await run_consumer()

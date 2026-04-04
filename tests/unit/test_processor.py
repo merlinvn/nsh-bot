@@ -42,8 +42,22 @@ def mock_db_session():
     patcher.stop()
 
 
+@pytest.fixture
+def mock_zalo_token_manager():
+    """Mock ZaloTokenManager to avoid database connections."""
+    mock_manager = MagicMock()
+    mock_manager.get_access_token = AsyncMock(return_value="mock_access_token")
+    patcher = patch(
+        "app.workers.outbound.processor.get_zalo_token_manager",
+        return_value=mock_manager,
+    )
+    patcher.start()
+    yield mock_manager
+    patcher.stop()
+
+
 @pytest.mark.asyncio
-async def test_success_on_first_attempt(message_payload: dict, mock_db_session: AsyncMock) -> None:
+async def test_success_on_first_attempt(message_payload: dict, mock_db_session: AsyncMock, mock_zalo_token_manager) -> None:
     """When send_text succeeds on first try, one delivery attempt is saved."""
     mock_instance = MagicMock()
     mock_instance.send_text = AsyncMock(return_value={"error": 0, "message": "OK"})
@@ -67,6 +81,7 @@ async def test_success_on_first_attempt(message_payload: dict, mock_db_session: 
 async def test_retry_on_429_then_succeeds(
     message_payload: dict,
     mock_db_session: AsyncMock,
+    mock_zalo_token_manager,
 ) -> None:
     """On 429, processor retries and succeeds on second attempt."""
     mock_instance = MagicMock()
@@ -102,6 +117,7 @@ async def test_retry_on_429_then_succeeds(
 async def test_retry_on_5xx_then_fails_after_max(
     message_payload: dict,
     mock_db_session: AsyncMock,
+    mock_zalo_token_manager,
 ) -> None:
     """On 5xx, processor retries MAX_RETRIES times then raises RetryableError."""
     mock_instance = MagicMock()
@@ -128,6 +144,7 @@ async def test_retry_on_5xx_then_fails_after_max(
 async def test_no_retry_on_non_retryable_error(
     message_payload: dict,
     mock_db_session: AsyncMock,
+    mock_zalo_token_manager,
 ) -> None:
     """On NonRetryableError (4xx), no retry occurs and function returns."""
     mock_instance = MagicMock()
@@ -150,6 +167,7 @@ async def test_no_retry_on_non_retryable_error(
 async def test_exponential_backoff_timing(
     message_payload: dict,
     mock_db_session: AsyncMock,
+    mock_zalo_token_manager,
 ) -> None:
     """After 429, processor waits ~2s before retry."""
     mock_instance = MagicMock()
@@ -178,6 +196,7 @@ async def test_exponential_backoff_timing(
 async def test_exponential_backoff_third_attempt(
     message_payload: dict,
     mock_db_session: AsyncMock,
+    mock_zalo_token_manager,
 ) -> None:
     """With two failures then success, waits 2s + 4s = 6s total."""
     mock_instance = MagicMock()

@@ -28,8 +28,17 @@ async def setup_consumer() -> AbstractQueue:
     global _connection, _channel, _queue
     _connection = await aio_pika.connect_robust(settings.rabbitmq_url)
     _channel = await _connection.channel()
-    await _channel.set_qos(prefetch=OUTBOUND_PREFETCH)
-    _queue = await _channel.declare_queue(OUTBOUND_QUEUE, durable=True)
+    await _channel.set_qos(prefetch_count=OUTBOUND_PREFETCH)
+    _queue = await _channel.declare_queue(
+        OUTBOUND_QUEUE,
+        durable=True,
+        arguments={
+            "x-dead-letter-exchange": "neochat.dlx",
+            "x-dead-letter-routing-key": "dead-letter",
+            "x-message-ttl": 600000,
+            "x-max-length": 50000,
+        },
+    )
     return _queue
 
 

@@ -80,7 +80,8 @@ Required environment variables:
 # Zalo OA Configuration
 ZALO_APP_ID=your_zalo_app_id          # From Zalo Developer Console
 ZALO_APP_SECRET=your_zalo_app_secret  # From Zalo Developer Console
-ZALO_ACCESS_TOKEN=your_access_token    # OAuth token for API calls
+ZALO_ACCESS_TOKEN=your_access_token    # Initial access token (optional if using refresh token)
+ZALO_REFRESH_TOKEN=your_refresh_token # For automatic token refresh (recommended)
 ZALO_WEBHOOK_SECRET=your_secret      # Verify webhook authenticity
 ZALO_OA_ID=your_oa_id                 # Your OA ID
 
@@ -100,7 +101,75 @@ OPENAI_MODEL=llama3.2
 INTERNAL_API_KEY=your_internal_api_key
 ```
 
-### Step 2: Start Development Environment
+### Step 2: Get Your Zalo Credentials
+
+1. Go to [Zalo Developer Console](https://developers.zalo.me/)
+2. Select your OA application
+3. Copy your **App ID** and **App Secret** from the Basic Information section
+4. For **Access Token**:
+   - Option A (Short-lived with refresh): Use the [Zalo API Explorer](https://developers.zalo.me/tools/explorer) or OAuth flow (recommended)
+   - Option B (Long-lived): Go to Settings → Access Token → Copy the long-lived token
+
+#### Option A: OAuth Flow (Recommended)
+
+**Token Expiration:**
+- Access Token: **25 hours**
+- Refresh Token: **3 months** (can only be used ONCE)
+
+**Step 1: Get Authorization Code**
+1. Go to [Zalo API Explorer](https://developers.zalo.me/tools/explorer)
+2. Select your OA application
+3. Use the **OAuth** endpoint to get authorization code
+
+**Step 2: Exchange Code for Tokens**
+```bash
+curl -X POST \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'secret_key: YOUR_APP_SECRET' \
+  --data-urlencode 'code=AUTHORIZATION_CODE' \
+  --data-urlencode 'app_id=YOUR_APP_ID' \
+  --data-urlencode 'grant_type=authorization_code' \
+  --data-urlencode 'code_verifier=YOUR_CODE_VERIFIER' \
+  'https://oauth.zaloapp.com/v4/oa/access_token'
+```
+
+**Step 3: Refresh Token (when access token expires)**
+```bash
+curl -X POST \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -H 'secret_key: YOUR_APP_SECRET' \
+  --data-urlencode 'refresh_token=YOUR_REFRESH_TOKEN' \
+  --data-urlencode 'app_id=YOUR_APP_ID' \
+  --data-urlencode 'grant_type=refresh_token' \
+  'https://oauth.zaloapp.com/v4/oa/access_token'
+```
+
+**Response:**
+```json
+{
+  "access_token": "RfBh5NdqsWzhcX8bDDe_1A...",
+  "refresh_token": "L2Y2BO9Prn_I1SkM08T4J...",
+  "expires_in": "90000"
+}
+```
+
+**Important Notes:**
+- Access token expires in 25 hours
+- Refresh token expires in 3 months
+- Refresh token can only be used **ONCE** - each refresh returns a new refresh token
+- The system automatically handles refresh when tokens expire
+
+#### Token Refresh (Automatic)
+
+The system automatically:
+1. Stores tokens in the `zalo_tokens` database table
+2. Monitors token expiration (5-minute buffer before actual expiry)
+3. Refreshes tokens before they expire using the refresh token
+4. Persists new tokens after each refresh
+3. Refreshes tokens before they expire
+4. Persists new tokens after refresh
+
+### Step 3: Start Development Environment
 
 ```bash
 # Start all services (postgres, redis, rabbitmq, api, workers)
@@ -109,11 +178,11 @@ docker-compose -f docker-compose.dev.yml up -d
 # Verify services are healthy
 docker-compose -f docker-compose.dev.yml ps
 
-# Run database migrations
+# Run database migrations (creates zalo_tokens table)
 docker-compose -f docker-compose.dev.yml exec api alembic upgrade head
 ```
 
-### Step 3: Configure Zalo Webhook
+### Step 4: Configure Zalo Webhook
 
 1. Go to [Zalo Developer Console](https://developers.zalo.me/)
 2. Select your OA application
@@ -125,7 +194,7 @@ docker-compose -f docker-compose.dev.yml exec api alembic upgrade head
 5. Set the webhook verification token (must match `ZALO_WEBHOOK_SECRET`)
 6. Enable webhook events you want to receive (messages, user actions, etc.)
 
-### Step 4: Expose Your Development Server
+### Step 5: Expose Your Development Server
 
 For local development, use ngrok:
 
@@ -218,6 +287,15 @@ docker-compose -f docker-compose.dev.yml ps
 # View worker logs
 docker-compose -f docker-compose.dev.yml logs conversation-worker
 docker-compose -f docker-compose.dev.yml logs outbound-worker
+```
+
+**Token issues:**
+```bash
+# Check zalo_tokens table
+docker-compose -f docker-compose.dev.yml exec postgres psql -U neochat -d neochat -c "SELECT id, length(access_token) as token_len, refresh_token IS NOT NULL as has_refresh, expires_at FROM zalo_tokens;"
+
+# Verify token in .env matches database
+docker-compose -f docker-compose.dev.yml exec postgres psql -U neochat -d neochat -c "SELECT substring(access_token, 1, 20) || '...' FROM zalo_tokens;"
 ```
 
 **Database issues:**

@@ -51,7 +51,7 @@ class TestPrefetch:
 
             await consumer.setup_consumer()
 
-            mock_channel.set_qos.assert_called_once_with(prefetch=5)
+            mock_channel.set_qos.assert_called_once_with(prefetch_count=5)
 
 
 class TestHandleMessage:

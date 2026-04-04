@@ -13,6 +13,7 @@ from app.workers.outbound.zalo_client import (
 )
 from app.workers.shared.db import db_session
 from app.workers.shared.logging import get_logger
+from app.workers.shared.zalo_token_manager import get_zalo_token_manager
 
 settings = get_settings()
 logger = get_logger("processor")
@@ -67,10 +68,14 @@ async def process_outbound(message: dict) -> None:
         extra={"user_id": user_id, "message_db_id": str(message_db_id)},
     )
 
+    # Get fresh access token (auto-refreshes if expired)
+    token_manager = get_zalo_token_manager()
+    access_token = await token_manager.get_access_token()
+
     zalo_client = ZaloClient(
         app_id=settings.zalo_app_id,
         app_secret=settings.zalo_app_secret,
-        access_token=settings.zalo_access_token,
+        access_token=access_token,
         oa_id=settings.zalo_oa_id,
     )
 

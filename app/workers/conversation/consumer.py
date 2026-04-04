@@ -47,6 +47,8 @@ class ConversationConsumer:
             arguments={
                 "x-dead-letter-exchange": "neochat.dlx",
                 "x-dead-letter-routing-key": "dead-letter",
+                "x-message-ttl": 300000,
+                "x-max-length": 10000,
             },
         )
 

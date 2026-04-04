@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     zalo_app_id: str = ""
     zalo_app_secret: str = ""
     zalo_access_token: str = ""
+    zalo_refresh_token: str = ""
     zalo_webhook_secret: str = ""
     zalo_oa_id: str = ""
 

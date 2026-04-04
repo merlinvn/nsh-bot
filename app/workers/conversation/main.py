@@ -66,7 +66,7 @@ async def run_consumer(shutdown_event: asyncio.Event) -> None:
 
 async def _wait_for_shutdown(shutdown_event: asyncio.Event, callback) -> None:
     try:
-        await asyncio.wait_for(shutdown_event.wait(), timeout=30.0)
+        await asyncio.wait_for(shutdown_event.wait(), timeout=None)
     except asyncio.TimeoutError:
         pass
     await callback()

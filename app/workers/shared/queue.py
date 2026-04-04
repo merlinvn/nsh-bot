@@ -44,7 +44,7 @@ async def get_channel() -> AbstractChannel:
 async def get_queue(name: str, prefetch: int = 5) -> AbstractQueue:
     """Declare and return a queue, setting prefetch on the channel."""
     channel = await get_channel()
-    await channel.set_qos(prefetch=prefetch)
+    await channel.set_qos(prefetch_count=prefetch)
     queue = await channel.declare_queue(name, durable=True)
     return queue
 
