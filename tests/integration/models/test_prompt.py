@@ -2,6 +2,7 @@
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.prompt import Prompt
 
@@ -96,6 +97,7 @@ class TestPrompt:
         }
         prompt.versions.append(new_version)
         prompt.active_version = "v2"
+        flag_modified(prompt, "versions")
         await session.commit()
 
         await session.refresh(prompt)
