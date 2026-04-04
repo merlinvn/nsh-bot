@@ -101,9 +101,12 @@ class ZaloTokenManager:
         expiry_threshold = datetime.now(timezone.utc) + timedelta(minutes=5)
         return self._expires_at < expiry_threshold
 
-    async def get_access_token(self) -> str:
+    async def get_access_token(self, force_refresh: bool = False) -> str:
         """
         Get a valid access token, refreshing if necessary.
+
+        Args:
+            force_refresh: If True, always refresh the token even if not expired.
 
         Returns:
             Valid Zalo access token string
@@ -116,7 +119,7 @@ class ZaloTokenManager:
             self._expires_at = token_record.expires_at
 
             # Check if token needs refresh
-            if self._refresh_token and self._is_token_expired():
+            if self._refresh_token and (force_refresh or self._is_token_expired()):
                 logger.info("Zalo token expired or expiring soon, refreshing...")
                 try:
                     token_data = await self._refresh_access_token(self._refresh_token)

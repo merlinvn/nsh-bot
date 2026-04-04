@@ -89,7 +89,12 @@ class ZaloClient:
             )
             raise RetryableError(f"Server error: {status}")
 
-        # 4xx except 429 — non-retryable
+        # 401 Unauthorized — token expired, should refresh and retry
+        if status == 401:
+            logger.warning("Zalo API token expired", extra={"user_id": user_id})
+            raise RetryableError(f"Token expired (401)")
+
+        # Other 4xx except 429 — non-retryable
         logger.error(
             "Zalo API client error",
             extra={"user_id": user_id, "status": status, "body": response.text[:200]},

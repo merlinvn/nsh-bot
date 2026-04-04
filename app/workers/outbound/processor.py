@@ -103,6 +103,20 @@ async def process_outbound(message: dict) -> None:
             await save_delivery_attempt(
                 message_db_id, attempt, "failed", error=str(e)
             )
+
+            # Check if token expired (401) - refresh and retry
+            if "Token expired (401)" in str(e) and attempt < MAX_RETRIES:
+                logger.info("Refreshing expired token and retrying", extra={"user_id": user_id})
+                access_token = await token_manager.get_access_token(force_refresh=True)
+                zalo_client = ZaloClient(
+                    app_id=settings.zalo_app_id,
+                    app_secret=settings.zalo_app_secret,
+                    access_token=access_token,
+                    oa_id=settings.zalo_oa_id,
+                )
+                attempt += 1
+                continue
+
             if attempt < MAX_RETRIES:
                 wait_time = BACKOFF_BASE**attempt
                 logger.warning(
