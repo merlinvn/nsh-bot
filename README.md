@@ -19,6 +19,21 @@ Zalo → Webhook (FastAPI) → RabbitMQ (conversation.process) → Conversation 
 
 ## Quick Start
 
+### Using Helper Script (Recommended)
+```bash
+# First time setup
+./scripts/dev-start.sh setup
+
+# Edit .env with your credentials
+
+# Start all services with tmux multi-pane logs
+./scripts/dev-start.sh start
+
+# Or start with auto-migration
+./scripts/dev-start.sh start --with-migrate
+```
+
+### Manual Start
 ```bash
 # Install dependencies
 uv sync
@@ -27,11 +42,20 @@ uv sync
 docker-compose -f docker-compose.dev.yml up -d
 
 # Run database migration
-docker-compose -f docker-compose.dev.yml exec api alembic upgrade head
+./scripts/dev-start.sh migrate
 
 # View logs
 docker-compose -f docker-compose.dev.yml logs -f api
 ```
+
+### Tmux Multi-Pane Logs
+When starting with `./scripts/dev-start.sh start`, tmux opens with 4 panes:
+- **Pane 1**: API logs
+- **Pane 2**: Conversation worker logs
+- **Pane 3**: Outbound worker logs
+- **Pane 4**: RabbitMQ logs
+
+Detach with `Ctrl+B` then `D`. Reattach with `tmux attach -t neochat-dev`.
 
 ## Zalo OA Integration Setup
 
