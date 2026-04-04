@@ -45,15 +45,26 @@ docker-compose exec api /bin/sh
 
 ## Testing
 
-### Unit Tests (fast, no external dependencies)
+### All Tests
 ```bash
+# Run all tests (unit + integration)
+uv run pytest tests/ -v
+
+# Run only unit tests (fast, no external dependencies)
 uv run pytest tests/unit/ -v
+
+# Run only integration tests (requires Docker)
+DATABASE_URL="postgresql+asyncpg://neochat:changeme@localhost:5432/neochat" \
+uv run pytest tests/integration/ -v
 ```
 
-### Integration Tests (requires Docker)
+### Test Infrastructure (for integration tests)
 ```bash
 # Start test infrastructure
 docker-compose -f docker-compose.test.yml up -d
+
+# Wait for services to be ready
+sleep 10
 
 # Run integration tests
 DATABASE_URL="postgresql+asyncpg://neochat:changeme@localhost:5432/neochat" \
@@ -62,6 +73,33 @@ uv run pytest tests/integration/ -v
 # Stop test infrastructure
 docker-compose -f docker-compose.test.yml down -v
 ```
+
+### Test Structure
+```
+tests/
+├── unit/                    # Unit tests with mocks (54 tests)
+│   ├── conftest.py
+│   ├── test_tools.py
+│   ├── test_llm.py
+│   ├── test_prompts.py
+│   ├── test_processor.py
+│   ├── test_zalo_client.py
+│   ├── test_consumer.py
+│   └── test_health.py
+└── integration/             # Integration tests (63 tests)
+    ├── conftest.py
+    ├── models/
+    │   ├── test_conversation.py
+    │   ├── test_message.py
+    │   ├── test_delivery_attempt.py
+    │   ├── test_tool_call.py
+    │   └── test_prompt.py
+    ├── test_internal.py
+    ├── test_webhooks.py
+    └── test_processor.py
+```
+
+**Total: 117 tests** (54 unit + 63 integration)
 
 ## Key Patterns
 

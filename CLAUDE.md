@@ -110,7 +110,7 @@ uv run pytest tests/unit/ -v
 
 Unit tests use mocks for all external services (database, Redis, RabbitMQ).
 
-### Integration Tests (requires Docker)
+### Integration Tests (63 tests - requires Docker)
 ```bash
 # Start test infrastructure
 docker-compose -f docker-compose.test.yml up -d
@@ -131,7 +131,7 @@ Integration tests require PostgreSQL, Redis, and RabbitMQ running via docker-com
 ### Test Structure
 ```
 tests/
-├── unit/           # Unit tests with mocks (no external deps)
+├── unit/                    # Unit tests with mocks (54 tests)
 │   ├── conftest.py
 │   ├── test_tools.py
 │   ├── test_llm.py
@@ -140,8 +140,22 @@ tests/
 │   ├── test_zalo_client.py
 │   ├── test_consumer.py
 │   └── test_health.py
-└── integration/    # Integration tests (requires docker)
+└── integration/             # Integration tests (63 tests)
     ├── conftest.py
     ├── models/
-    └── test_*.py
+    │   ├── test_conversation.py
+    │   ├── test_message.py
+    │   ├── test_delivery_attempt.py
+    │   ├── test_tool_call.py
+    │   └── test_prompt.py
+    ├── test_internal.py
+    ├── test_webhooks.py
+    └── test_processor.py
 ```
+
+**Total: 117 tests** (54 unit + 63 integration)
+
+### Pytest Configuration
+- `asyncio_mode = "auto"` - async tests run automatically
+- `addopts = "--import-mode=importlib"` - prevents module name collision between test files with same names (e.g., `test_processor.py` in both unit/ and integration/)
+- Tests can run together: `uv run pytest tests/ -v`
