@@ -95,6 +95,9 @@ async def process_outbound(message: dict) -> None:
 
         except RetryableError as e:
             last_error = str(e)
+            await save_delivery_attempt(
+                message_db_id, attempt, "failed", error=str(e)
+            )
             if attempt < MAX_RETRIES:
                 wait_time = BACKOFF_BASE**attempt
                 logger.warning(
@@ -109,9 +112,6 @@ async def process_outbound(message: dict) -> None:
                 await asyncio.sleep(wait_time)
                 attempt += 1
             else:
-                await save_delivery_attempt(
-                    message_db_id, attempt, "failed", error=str(e)
-                )
                 logger.error(
                     "Max retries exhausted, sending to DLQ",
                     extra={

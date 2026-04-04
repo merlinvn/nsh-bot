@@ -1,102 +1,27 @@
-"""Pytest configuration and shared fixtures for all tests."""
-import asyncio
+"""Pytest configuration for unit tests - no external dependencies."""
 import logging
-import os
-from collections.abc import AsyncGenerator, Generator
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from app.models.base import Base
 
 
 def pytest_configure(config):
     """Configure logging to handle structlog-style calls before tests run."""
-    import logging
-
     # Override the Logger._log method to accept extra kwargs
     _original_log = logging.Logger._log
 
     def patched_log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1, **kwargs):
-        # Accept any extra kwargs silently
         return _original_log(self, level, msg, args, exc_info=exc_info, extra=extra,
                            stack_info=stack_info, stacklevel=stacklevel)
 
     logging.Logger._log = patched_log
 
-# Use DATABASE_URL env var (from docker-compose.test.yml) or fall back to SQLite for local dev
-TEST_DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "sqlite+aiosqlite:///:memory:"
-)
-
-
-@pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create event loop for the test session."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest_asyncio.fixture
-async def engine():
-    """Create async SQLAlchemy engine for tests."""
-    is_sqlite = TEST_DATABASE_URL.startswith("sqlite")
-
-    engine = create_async_engine(
-        TEST_DATABASE_URL,
-        echo=False,
-        connect_args={"check_same_thread": False} if is_sqlite else {},
-    )
-
-    from sqlalchemy import event
-
-    if is_sqlite:
-        @event.listens_for(engine.sync_engine, "connect")
-        def _set_sqlite_pragma(dbapi_connection, connection_record):
-            cursor = dbapi_connection.cursor()
-            cursor.execute("PRAGMA foreign_keys = ON")
-            cursor.close()
-
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        yield engine
-    finally:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-        await engine.dispose()
-
-
-@pytest_asyncio.fixture
-async def session_factory(engine) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
-    """Create an async session factory bound to the test engine."""
-    factory = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-    yield factory
-
-
-@pytest_asyncio.fixture
-async def session(session_factory) -> AsyncGenerator[AsyncSession, None]:
-    """Create an async session for a single test."""
-    async with session_factory() as session:
-        yield session
-
-
-# --- Conversation worker fixtures ---
-
 
 @pytest.fixture
 def mock_db_session():
     """Provide a mock async database session."""
+    from contextlib import asynccontextmanager
+
     @asynccontextmanager
     async def _session():
         session = AsyncMock()
