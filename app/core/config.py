@@ -26,9 +26,18 @@ class Settings(BaseSettings):
     zalo_webhook_secret: str = ""
     zalo_oa_id: str = ""
 
-    # LLM
+    # LLM Provider: "anthropic" or "openai-compat"
+    llm_provider: str = "anthropic"
+
+    # Anthropic (if llm_provider = "anthropic")
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
+
+    # OpenAI-Compatible (if llm_provider = "openai-compat")
+    # Works with Ollama, LM Studio, LocalAI, Azure OpenAI, etc.
+    openai_base_url: str = "http://localhost:11434/v1"
+    openai_api_key: str = "ollama"  # Often not needed for local
+    openai_model: str = "llama3.2"
 
     # API
     internal_api_key: str = "changeme"

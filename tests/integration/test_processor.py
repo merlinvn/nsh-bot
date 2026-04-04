@@ -146,7 +146,7 @@ async def test_process_inbound_message_saves_and_llm():
         mock_channel.declare_exchange = AsyncMock(return_value=mock_exchange)
         mock_get_channel.return_value = mock_channel
 
-        with patch("app.workers.conversation.processor.AnthropicLLM") as MockLLM:
+        with patch("app.workers.conversation.processor.create_llm_client") as MockLLM:
             mock_llm_instance = AsyncMock()
             MockLLM.return_value = mock_llm_instance
             mock_llm_instance.complete = AsyncMock(
@@ -207,7 +207,7 @@ async def test_process_with_tool_calls():
         mock_channel.declare_exchange = AsyncMock(return_value=mock_exchange)
         mock_get_channel.return_value = mock_channel
 
-        with patch("app.workers.conversation.processor.AnthropicLLM") as MockLLM:
+        with patch("app.workers.conversation.processor.create_llm_client") as MockLLM:
             mock_llm_instance = AsyncMock()
             MockLLM.return_value = mock_llm_instance
             mock_llm_instance.complete = AsyncMock(
@@ -275,7 +275,7 @@ async def test_max_tool_calls_enforced():
         mock_channel.declare_exchange = AsyncMock(return_value=mock_exchange)
         mock_get_channel.return_value = mock_channel
 
-        with patch("app.workers.conversation.processor.AnthropicLLM") as MockLLM:
+        with patch("app.workers.conversation.processor.create_llm_client") as MockLLM:
             mock_llm_instance = AsyncMock()
             MockLLM.return_value = mock_llm_instance
             mock_llm_instance.complete = AsyncMock(
@@ -329,7 +329,7 @@ async def test_max_llm_steps_enforced():
         mock_channel.declare_exchange = AsyncMock(return_value=mock_exchange)
         mock_get_channel.return_value = mock_channel
 
-        with patch("app.workers.conversation.processor.AnthropicLLM") as MockLLM:
+        with patch("app.workers.conversation.processor.create_llm_client") as MockLLM:
             mock_llm_instance = AsyncMock()
             MockLLM.return_value = mock_llm_instance
             # Always return tool calls — forces max steps
@@ -385,7 +385,7 @@ async def test_fallback_on_non_transient_error():
         mock_logger = MagicMock()
         mock_get_logger.return_value = mock_logger
 
-        with patch("app.workers.conversation.processor.AnthropicLLM") as MockLLM:
+        with patch("app.workers.conversation.processor.create_llm_client") as MockLLM:
             mock_llm_instance = AsyncMock()
             MockLLM.return_value = mock_llm_instance
             mock_llm_instance.complete = AsyncMock(

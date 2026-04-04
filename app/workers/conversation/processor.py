@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.tool_call import ToolCall
-from app.workers.conversation.llm import AnthropicLLM
+from app.workers.conversation.llm import BaseLLM, create_llm_client
 from app.workers.conversation.types import LLMResponse, ToolCallResult
 from app.workers.conversation.prompts import PromptManager
 from app.workers.conversation.tools import TOOL_DEFINITIONS, ToolExecutor, ToolResult
@@ -32,16 +32,20 @@ FALLBACK_TEXT = "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau 
 
 class ConversationProcessor:
     def __init__(self) -> None:
-        self._llm: Optional[AnthropicLLM] = None
+        self._llm: Optional[BaseLLM] = None
         self._prompt_manager = PromptManager()
         self._tool_executor = ToolExecutor()
 
-    def _get_llm(self) -> AnthropicLLM:
+    def _get_llm(self) -> BaseLLM:
         if self._llm is None:
             from app.core.config import settings
-            self._llm = AnthropicLLM(
-                api_key=settings.anthropic_api_key,
-                model=settings.anthropic_model,
+            self._llm = create_llm_client(
+                provider=settings.llm_provider,
+                anthropic_api_key=settings.anthropic_api_key,
+                anthropic_model=settings.anthropic_model,
+                openai_base_url=settings.openai_base_url,
+                openai_api_key=settings.openai_api_key,
+                openai_model=settings.openai_model,
                 timeout=LLM_TIMEOUT_SECONDS,
             )
         return self._llm

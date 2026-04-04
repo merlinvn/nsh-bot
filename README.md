@@ -60,8 +60,17 @@ ZALO_ACCESS_TOKEN=your_access_token    # OAuth token for API calls
 ZALO_WEBHOOK_SECRET=your_secret      # Verify webhook authenticity
 ZALO_OA_ID=your_oa_id                 # Your OA ID
 
-# LLM Configuration
+# LLM Configuration (supports Anthropic or OpenAI-compatible)
+LLM_PROVIDER=openai-compat            # "anthropic" or "openai-compat"
+
+# If LLM_PROVIDER=anthropic:
 ANTHROPIC_API_KEY=sk-ant-...         # Anthropic API key
+ANTHROPIC_MODEL=claude-sonnet-4-20250514
+
+# If LLM_PROVIDER=openai-compat (Ollama, LM Studio, LocalAI, etc.):
+OPENAI_BASE_URL=http://localhost:11434/v1
+OPENAI_API_KEY=ollama
+OPENAI_MODEL=llama3.2
 
 # Internal API (for admin operations)
 INTERNAL_API_KEY=your_internal_api_key
