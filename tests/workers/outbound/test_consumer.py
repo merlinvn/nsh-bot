@@ -124,19 +124,20 @@ class TestGracefulShutdown:
 
     @pytest.mark.asyncio
     async def test_shutdown_consumer_closes_channel_and_connection(self) -> None:
-        with patch("app.workers.outbound.consumer.aio_pika") as mock_aio_pika:
-            mock_connection = AsyncMock()
-            mock_channel = AsyncMock()
-            mock_connection.channel = AsyncMock(return_value=mock_channel)
-            mock_aio_pika.connect_robust = AsyncMock(return_value=mock_connection)
+        mock_connection = MagicMock()
+        mock_channel = MagicMock()
+        mock_channel.is_closed = False
+        mock_connection.is_closed = False
+        mock_channel.close = AsyncMock()
+        mock_connection.close = AsyncMock()
 
-            consumer._connection = mock_connection
-            consumer._channel = mock_channel
+        consumer._connection = mock_connection
+        consumer._channel = mock_channel
 
-            await consumer.shutdown_consumer()
+        await consumer.shutdown_consumer()
 
-            mock_channel.close.assert_called_once()
-            mock_connection.close.assert_called_once()
+        mock_channel.close.assert_called_once()
+        mock_connection.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_shutdown_does_nothing_when_not_initialized(self) -> None:

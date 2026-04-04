@@ -1,4 +1,5 @@
 """Tests for health check endpoints (GET /health/live, GET /health/ready)."""
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient

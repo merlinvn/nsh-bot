@@ -3,11 +3,11 @@
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 import anthropic
 
-from app.workers.conversation.processor import LLMResponse, ToolCallResult
+from app.workers.conversation.types import LLMResponse, ToolCallResult
 from app.workers.shared.logging import get_logger
 
 logger = get_logger("conversation-worker.llm")

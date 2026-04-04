@@ -14,6 +14,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.tool_call import ToolCall
 from app.workers.conversation.llm import AnthropicLLM
+from app.workers.conversation.types import LLMResponse, ToolCallResult
 from app.workers.conversation.prompts import PromptManager
 from app.workers.conversation.tools import TOOL_DEFINITIONS, ToolExecutor, ToolResult
 from app.workers.shared.db import db_session
@@ -395,25 +396,3 @@ class ConversationProcessor:
             ),
             routing_key=OUTBOUND_QUEUE,
         )
-
-
-# Type alias for the return type
-class LLMResponse:
-    def __init__(
-        self,
-        text: str,
-        tool_calls: list["ToolCallResult"],
-        latency_ms: int,
-        token_usage: Optional[dict] = None,
-    ):
-        self.text = text
-        self.tool_calls = tool_calls
-        self.latency_ms = latency_ms
-        self.token_usage = token_usage
-
-
-class ToolCallResult:
-    def __init__(self, id: str, name: str, input: dict):
-        self.id = id
-        self.name = name
-        self.input = input
