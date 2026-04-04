@@ -24,13 +24,176 @@ Zalo → Webhook (FastAPI) → RabbitMQ (conversation.process) → Conversation 
 uv sync
 
 # Start all services
-docker-compose up -d
+docker-compose -f docker-compose.dev.yml up -d
 
 # Run database migration
-docker-compose exec api alembic upgrade head
+docker-compose -f docker-compose.dev.yml exec api alembic upgrade head
 
 # View logs
-docker-compose logs -f api
+docker-compose -f docker-compose.dev.yml logs -f api
+```
+
+## Zalo OA Integration Setup
+
+### Prerequisites
+
+1. **Zalo OA Account** - You need a Zalo Official Account (OA)
+2. **Zalo Developer Console** - Access at https://developers.zalo.me/
+
+### Step 1: Configure Environment
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your Zalo credentials
+nano .env
+```
+
+Required environment variables:
+
+```env
+# Zalo OA Configuration
+ZALO_APP_ID=your_zalo_app_id          # From Zalo Developer Console
+ZALO_APP_SECRET=your_zalo_app_secret  # From Zalo Developer Console
+ZALO_ACCESS_TOKEN=your_access_token    # OAuth token for API calls
+ZALO_WEBHOOK_SECRET=your_secret      # Verify webhook authenticity
+ZALO_OA_ID=your_oa_id                 # Your OA ID
+
+# LLM Configuration
+ANTHROPIC_API_KEY=sk-ant-...         # Anthropic API key
+
+# Internal API (for admin operations)
+INTERNAL_API_KEY=your_internal_api_key
+```
+
+### Step 2: Start Development Environment
+
+```bash
+# Start all services (postgres, redis, rabbitmq, api, workers)
+docker-compose -f docker-compose.dev.yml up -d
+
+# Verify services are healthy
+docker-compose -f docker-compose.dev.yml ps
+
+# Run database migrations
+docker-compose -f docker-compose.dev.yml exec api alembic upgrade head
+```
+
+### Step 3: Configure Zalo Webhook
+
+1. Go to [Zalo Developer Console](https://developers.zalo.me/)
+2. Select your OA application
+3. Navigate to **Webhooks** section
+4. Configure your webhook URL:
+   ```
+   https://your-domain-or-ngrok-url/webhooks/zalo
+   ```
+5. Set the webhook verification token (must match `ZALO_WEBHOOK_SECRET`)
+6. Enable webhook events you want to receive (messages, user actions, etc.)
+
+### Step 4: Expose Your Development Server
+
+For local development, use ngrok:
+
+```bash
+# Install ngrok
+brew install ngrok  # macOS
+
+# Or download from https://ngrok.com/download
+
+# Start ngrok tunnel to your API
+ngrok http 8000
+
+# Note the https URL (e.g., https://abc123.ngrok.io)
+# Use this URL when configuring Zalo webhook
+```
+
+### Step 5: Verify Integration
+
+1. **Check Health Endpoints:**
+   ```bash
+   curl http://localhost:8000/health/live
+   # Should return: {"status":"alive"}
+
+   curl http://localhost:8000/health/ready
+   # Should return: {"status":"ready"}
+   ```
+
+2. **Send a Test Message:**
+   - Open Zalo and send a message to your OA
+   - The message should be received by the webhook
+   - Check logs to see the flow:
+   ```bash
+   docker-compose -f docker-compose.dev.yml logs -f api
+   docker-compose -f docker-compose.dev.yml logs -f conversation-worker
+   ```
+
+3. **Verify Database:**
+   ```bash
+   docker-compose -f docker-compose.dev.yml exec postgres psql -U neochat -d neochat
+   ```
+   Check `conversations` and `messages` tables for received messages.
+
+### Message Flow
+
+```
+User sends message on Zalo
+         ↓
+Zalo sends webhook to: POST /webhooks/zalo
+         ↓
+Webhook validates signature & deduplicates via Redis
+         ↓
+Message published to RabbitMQ: conversation.process queue
+         ↓
+Conversation Worker picks up message
+         ↓
+Worker calls LLM (Claude) with tools
+         ↓
+LLM processes and returns response
+         ↓
+Response published to: outbound.send queue
+         ↓
+Outbound Worker picks up outbound message
+         ↓
+Worker calls Zalo API to send message
+         ↓
+User receives reply on Zalo
+```
+
+### Available Tools (Phase 1)
+
+| Tool | Description |
+|------|-------------|
+| `lookup_customer` | Find customer by phone or name |
+| `get_order_status` | Check order status by order ID |
+| `create_support_ticket` | Create a support ticket |
+| `handoff_request` | Request human agent handoff |
+
+### Troubleshooting
+
+**Webhook not receiving messages:**
+- Verify ngrok/public URL is accessible from Zalo
+- Check Zalo developer console for webhook status
+- Ensure `ZALO_WEBHOOK_SECRET` matches
+
+**Workers not processing:**
+```bash
+# Check if workers are running
+docker-compose -f docker-compose.dev.yml ps
+
+# View worker logs
+docker-compose -f docker-compose.dev.yml logs conversation-worker
+docker-compose -f docker-compose.dev.yml logs outbound-worker
+```
+
+**Database issues:**
+```bash
+# Run migrations
+docker-compose -f docker-compose.dev.yml exec api alembic upgrade head
+
+# Check migrations status
+docker-compose -f docker-compose.dev.yml exec api alembic current
 ```
 
 ## Development
