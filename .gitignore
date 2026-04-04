@@ -31,3 +31,6 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+# Claude Code
+.claude/
