@@ -158,13 +158,17 @@ def test_prompt_manager_get_active_version_unknown():
     assert manager.get_active_version() == "unknown"
 
 
-def test_prompt_manager_fallback_returns_vietnamese_text():
+@pytest.mark.asyncio
+async def test_prompt_manager_fallback_returns_vietnamese_text():
     """Test fallback prompt is Vietnamese text."""
-    with patch("asyncio.create_task"):
-        manager = PromptManager()
-        fallback = manager.get_fallback_prompt()
-        assert "Xin lỗi" in fallback
-        assert "hệ thống" in fallback
+    manager = PromptManager()
+    fallback = manager.get_fallback_prompt()
+    assert "Xin lỗi" in fallback
+    assert "hệ thống" in fallback
+    # Clean up background refresh tasks created during the test
+    for task in asyncio.all_tasks():
+        if task.get_name() and "refresh" in task.get_name():
+            task.cancel()
 
 
 def test_cache_ttl_is_300_seconds():
