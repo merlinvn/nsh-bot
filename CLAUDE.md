@@ -100,3 +100,48 @@ Internal: conversation management, replay, prompt activation
 - Mask PII in logs
 - Validate all webhook input
 - All Zalo API calls go through outbound worker (never directly from webhook)
+
+## Testing
+
+### Unit Tests (54 tests - no external dependencies)
+```bash
+uv run pytest tests/unit/ -v
+```
+
+Unit tests use mocks for all external services (database, Redis, RabbitMQ).
+
+### Integration Tests (requires Docker)
+```bash
+# Start test infrastructure
+docker-compose -f docker-compose.test.yml up -d
+
+# Wait for services to be ready
+sleep 10
+
+# Run integration tests
+DATABASE_URL="postgresql+asyncpg://neochat:changeme@localhost:5432/neochat" \
+uv run pytest tests/integration/ -v
+
+# Stop test infrastructure
+docker-compose -f docker-compose.test.yml down -v
+```
+
+Integration tests require PostgreSQL, Redis, and RabbitMQ running via docker-compose.
+
+### Test Structure
+```
+tests/
+├── unit/           # Unit tests with mocks (no external deps)
+│   ├── conftest.py
+│   ├── test_tools.py
+│   ├── test_llm.py
+│   ├── test_prompts.py
+│   ├── test_processor.py
+│   ├── test_zalo_client.py
+│   ├── test_consumer.py
+│   └── test_health.py
+└── integration/    # Integration tests (requires docker)
+    ├── conftest.py
+    ├── models/
+    └── test_*.py
+```
