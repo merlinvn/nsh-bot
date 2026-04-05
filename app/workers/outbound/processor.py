@@ -2,9 +2,11 @@
 import asyncio
 from uuid import UUID
 
+import redis.asyncio as redis
 from sqlalchemy import insert
 
 from app.core.config import get_settings
+from app.core.redis import get_redis_client
 from app.models.delivery_attempt import DeliveryAttempt
 from app.workers.outbound.zalo_client import (
     NonRetryableError,
@@ -71,6 +73,14 @@ async def process_outbound(message: dict) -> None:
         "Processing outbound message",
         extra={"user_id": user_id, "message_id": message_id, "outbound_message_id": outbound_message_id},
     )
+
+    # Idempotency check: prevent double-send if same message_id is processed twice
+    redis_client = await get_redis_client()
+    sent_key = f"outbound:sent:{message_id}"
+    was_sent = await redis_client.set(sent_key, "1", nx=True, ex=86400)
+    if was_sent is None:
+        logger.info("Outbound already processed, skipping", extra={"message_id": message_id, "user_id": user_id})
+        return
 
     # Get fresh access token (auto-refreshes if expired)
     token_manager = get_zalo_token_manager()
