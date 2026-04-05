@@ -104,9 +104,9 @@ async def test_correct_headers_and_body(client: ZaloClient) -> None:
     # Verify URL
     assert call_args.args[0] == "https://openapi.zalo.me/v3.0/oa/message/cs"
 
-    # Verify headers
+    # Verify headers — client uses access_token (not Authorization: Bearer)
     headers = call_args.kwargs.get("headers", {})
-    assert headers["Authorization"] == "Bearer test_access_token"
+    assert headers["access_token"] == "test_access_token"
     assert headers["Content-Type"] == "application/json"
 
     # Verify body
