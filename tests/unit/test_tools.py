@@ -150,7 +150,9 @@ def test_tool_whitelist_contains_expected_tools():
     assert "get_order_status" in TOOL_WHITELIST
     assert "create_support_ticket" in TOOL_WHITELIST
     assert "handoff_request" in TOOL_WHITELIST
-    assert len(TOOL_WHITELIST) == 4
+    assert "delegate_to_quote_agent" in TOOL_WHITELIST
+    assert "calculate_shipping_quote" in TOOL_WHITELIST
+    assert len(TOOL_WHITELIST) == 6
 
 
 def test_tool_definitions_count():

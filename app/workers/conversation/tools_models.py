@@ -41,7 +41,20 @@ class HandoffRequestInput(BaseModel):
 
 class DelegateToQuoteAgentInput(BaseModel):
     """Input for delegate_to_quote_agent tool."""
-    reason: str = Field(default="", description="Reason for delegation")
+    customer_message: str = Field(
+        description="Tin nhắn hiện tại của khách liên quan đến báo giá vận chuyển"
+    )
+    known_context: dict = Field(
+        default_factory=dict,
+        description=(
+            "Thông tin đã biết từ hội thoại trước. "
+            "Các trường có thể có: service_type, actual_weight_kg, length_cm, width_cm, height_cm, "
+            "product_category, is_same_item_lot, is_fragile, contains_battery, contains_liquid, "
+            "contains_powder, is_medical_item, is_fake_or_branded_sensitive, is_cosmetic, "
+            "needs_insurance, declared_goods_value_vnd"
+        ),
+    )
+    reason: str = Field(default="", description="Lý do chuyển sang subagent báo giá")
 
 
 class CalculateShippingQuoteInput(BaseModel):
@@ -50,18 +63,41 @@ class CalculateShippingQuoteInput(BaseModel):
     Supports all service tiers from the Phase 1 knowledge base.
     All dimensions are required for accurate volumetric calculation.
     """
-    weight_kg: float = Field(description="Package weight in kg (must be > 0)")
+    service_type: Literal["fast", "standard", "bundle", "lot"] = Field(
+        default="standard",
+        description=(
+            "Service tier: fast (3-6 days, air), "
+            "standard (5-10 days, rail), "
+            "bundle (10-15 days, economy), "
+            "lot (15-25 days, batch, min 50kg/same item lot)"
+        ),
+    )
+    actual_weight_kg: float = Field(description="Package actual weight in kg (must be > 0)")
     length_cm: float = Field(description="Package length in cm (must be > 0)")
     width_cm: float = Field(description="Package width in cm (must be > 0)")
     height_cm: float = Field(description="Package height in cm (must be > 0)")
-    service_type: Literal["nhanh", "thuong", "bo", "bolo"] = Field(
-        default="thuong",
-        description=(
-            "Service tier: nhanh (3-6 days, air), "
-            "thuong (5-10 days, rail), "
-            "bo (10-15 days, economy), "
-            "bolo (15-25 days, batch, min 50kg/0.3m³)"
-        ),
+    product_category: str = Field(
+        default="",
+        description="Product category for surcharge calculation (e.g. 'quần áo', 'tất', 'thủy tinh')"
+    )
+    is_same_item_lot: bool = Field(
+        default=False,
+        description="Whether the lot is all the same item type (required for lot service)"
+    )
+    is_fragile: bool = Field(default=False, description="Whether the package contains fragile items")
+    contains_battery: bool = Field(default=False, description="Contains battery")
+    contains_liquid: bool = Field(default=False, description="Contains liquid")
+    contains_powder: bool = Field(default=False, description="Contains powder")
+    is_medical_item: bool = Field(default=False, description="Is a medical item")
+    is_fake_or_branded_sensitive: bool = Field(
+        default=False,
+        description="Contains fake or branded-sensitive goods"
+    )
+    is_cosmetic: bool = Field(default=False, description="Is a cosmetic product")
+    needs_insurance: bool = Field(default=False, description="Customer wants insurance")
+    declared_goods_value_vnd: float = Field(
+        default=0,
+        description="Declared goods value in VND for insurance calculation"
     )
 
 

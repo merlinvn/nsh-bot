@@ -251,8 +251,8 @@ def _bootstrap_defaults(registry: ToolRegistry) -> None:
             name="delegate_to_quote_agent",
             description=(
                 "Delegate to the quote subagent to calculate shipping rates. "
-                "Use when the customer wants a shipping quote and you have "
-                "weight and dimensions."
+                "Use when the customer wants a shipping quote. "
+                "Pass customer_message and any known_context (weight, dimensions, service_type)."
             ),
             input_model=DelegateToQuoteAgentInput,
             handler=handlers.delegate_to_quote_agent,
@@ -263,9 +263,9 @@ def _bootstrap_defaults(registry: ToolRegistry) -> None:
         ToolSpec(
             name="calculate_shipping_quote",
             description=(
-                "Calculate shipping cost based on weight and dimensions. "
-                "Returns an estimate in VND. Requires weight_kg and all three "
-                "dimensions. Supports service types: nhanh, thuong, bo, bolo."
+                "Calculate shipping cost based on weight, dimensions, and service type. "
+                "Returns a structured quote with status, message_to_customer, and quote_data. "
+                "Supports service types: fast, standard, bundle, lot."
             ),
             input_model=CalculateShippingQuoteInput,
             handler=handlers.calculate_shipping_quote,

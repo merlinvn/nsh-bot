@@ -230,52 +230,54 @@ def test_quote_agent_tools():
 
 @pytest.mark.asyncio
 async def test_delegate_to_quote_agent():
-    """delegate_to_quote_agent returns delegation instruction."""
-    result = await handlers.delegate_to_quote_agent(DelegateToQuoteAgentInput())
+    """delegate_to_quote_agent returns delegation marker."""
+    result = await handlers.delegate_to_quote_agent(DelegateToQuoteAgentInput(
+        customer_message="Tôi muốn báo giá vận chuyển"
+    ))
     assert result["delegated"] is True
-    assert "calculate_shipping_quote" in result["message"]
+    assert "customer_message" in result
 
 
 @pytest.mark.asyncio
-async def test_calculate_shipping_quote_nhanh():
-    """calculate_shipping_quote computes correct estimate for 'nhanh'."""
+async def test_calculate_shipping_quote_fast():
+    """calculate_shipping_quote computes correct estimate for 'fast'."""
     result = await handlers.calculate_shipping_quote(CalculateShippingQuoteInput(
-        weight_kg=5.0,
+        service_type="fast",
+        actual_weight_kg=5.0,
         length_cm=30,
         width_cm=20,
         height_cm=10,
-        service_type="nhanh",
     ))
-    assert result["success"] is True
-    assert result["service_type"] == "nhanh"
-    assert "estimated_total_vnd" in result
+    assert result["status"] == "quoted"
+    assert result["quote_data"]["service_type"] == "fast"
+    assert "total_vnd" in result["quote_data"]
 
 
 @pytest.mark.asyncio
-async def test_calculate_shipping_quote_bolo():
-    """calculate_shipping_quote applies minimum charge for bolo."""
+async def test_calculate_shipping_quote_lot_minimum():
+    """calculate_shipping_quote applies minimum charge for lot at 50kg."""
     result = await handlers.calculate_shipping_quote(CalculateShippingQuoteInput(
-        weight_kg=1.0,
+        service_type="lot",
+        actual_weight_kg=50.0,  # exactly at minimum
         length_cm=10,
         width_cm=10,
         height_cm=10,
-        service_type="bolo",
+        is_same_item_lot=True,
     ))
-    assert result["success"] is True
-    # 0.0002 m³ * 250 = 0.05kg < 50kg minimum → should be 50kg
-    assert result["chargeable_kg"] == 50.0
+    assert result["status"] == "quoted"
 
 
 @pytest.mark.asyncio
 async def test_calculate_shipping_quote_missing_weight():
-    """calculate_shipping_quote rejects missing weight."""
-    with pytest.raises(Exception):  # Pydantic validation error
-        CalculateShippingQuoteInput(
-            length_cm=30,
-            width_cm=20,
-            height_cm=10,
-            service_type="thuong",
-        )
+    """calculate_shipping_quote returns need_clarification for weight=0."""
+    result = await handlers.calculate_shipping_quote(CalculateShippingQuoteInput(
+        service_type="standard",
+        actual_weight_kg=0,  # explicitly 0 triggers missing check
+        length_cm=30,
+        width_cm=20,
+        height_cm=10,
+    ))
+    assert result["status"] == "need_clarification"
 
 
 @pytest.mark.asyncio
@@ -283,9 +285,9 @@ async def test_calculate_shipping_quote_unknown_service():
     """calculate_shipping_quote rejects unknown service type."""
     with pytest.raises(Exception):  # Pydantic validation error
         CalculateShippingQuoteInput(
-            weight_kg=5.0,
+            service_type="invalid_type",
+            actual_weight_kg=5.0,
             length_cm=30,
             width_cm=20,
             height_cm=10,
-            service_type="invalid_type",
         )

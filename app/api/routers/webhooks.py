@@ -9,13 +9,16 @@ from fastapi.responses import PlainTextResponse
 from app.api.config import api_settings
 from app.api.dependencies import get_rabbitmq, get_redis
 from app.api.schemas.webhook import WebhookResponse, ZaloWebhookPayload
-from app.api.services.dedup import check_and_set_message_id
+from app.api.services.dedup import check_and_set_message_id, check_and_set_ack_sent
 from app.api.services.queue import publish_conversation_process
 from app.api.services.signature import verify_zalo_signature
+from app.core.rabbitmq import publish_message, OUTBOUND_SEND_RK
 
 logger = logging.getLogger("neochat.api.webhooks")
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+ACK_TEXT = "Dạ em đã nhận được tin nhắn của anh/chị rồi ạ! Đợi em xíu để em hỗ trợ nhé 😊"
 
 
 @router.get(
@@ -121,6 +124,28 @@ async def zalo_webhook(
             },
         )
         return WebhookResponse(success=True)
+
+    # 3b. Send ACK to customer immediately (only once per message_id)
+    ack_key = f"zalo:ack:{message_id}"
+    try:
+        ack_sent = await redis_client.set(ack_key, "1", nx=True, ex=86400)
+        if ack_sent:
+            await publish_message(
+                routing_key=OUTBOUND_SEND_RK,
+                body={
+                    "message_id": message_id,
+                    "external_user_id": sender_id,
+                    "text": ACK_TEXT,
+                    "conversation_id": "",
+                    "outbound_message_id": "",
+                    "attempt_no": 1,
+                },
+            )
+            logger.info("ack_published", extra={"message_id": message_id, "user_id": sender_id})
+        else:
+            logger.info("ack_already_sent_skipping", extra={"message_id": message_id})
+    except Exception as exc:
+        logger.warning("ack_publish_failed", extra={"message_id": message_id, "error": str(exc)})
 
     # 4. Publish to conversation.process queue
     queue_payload = {

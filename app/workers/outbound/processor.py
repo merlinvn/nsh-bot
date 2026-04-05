@@ -30,9 +30,12 @@ async def save_delivery_attempt(
     error: str | None = None,
 ) -> None:
     """Save a delivery attempt record to the database."""
+    if not message_db_id:
+        logger.debug("Skipping delivery attempt save — no message_db_id")
+        return
     async with db_session() as session:
         stmt = insert(DeliveryAttempt).values(
-            message_id=UUID(message_db_id) if message_db_id else None,
+            message_id=UUID(message_db_id),
             attempt_no=attempt_no,
             status=status,
             response=response,

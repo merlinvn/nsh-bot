@@ -33,6 +33,7 @@ logger = get_logger("conversation-worker.handlers")
 # Phase 1 handlers
 # ---------------------------------------------------------------------------
 
+
 async def lookup_customer(input: LookupCustomerInput) -> dict:
     """Find customer by phone number or name.
 
@@ -167,86 +168,255 @@ async def handoff_request(input: HandoffRequestInput) -> dict:
 # New Phase 1 tools
 # ---------------------------------------------------------------------------
 
+
 async def delegate_to_quote_agent(input: DelegateToQuoteAgentInput) -> dict:
     """Delegate to the quote subagent.
 
-    Phase 1: returns an instruction to use calculate_shipping_quote.
-    Phase 2+: would involve actual subagent orchestration.
+    Returns a marker dict that the processor uses to invoke the quote subagent.
+    The processor intercepts this marker and runs the quote agent loop.
     """
     return {
         "delegated": True,
-        "message": "Vui lòng sử dụng tool calculate_shipping_quote để tính cước vận chuyển.",
+        "customer_message": input.customer_message,
+        "known_context": input.known_context,
         "reason": input.reason,
     }
 
 
 async def calculate_shipping_quote(input: CalculateShippingQuoteInput) -> dict:
-    """Calculate shipping quote based on package details.
+    """Calculate shipping quote with tiered pricing, surcharges, and restrictions.
 
     Deterministic calculator using rates from the Phase 1 knowledge base.
-    Rates match the default system prompt in prompts.py.
-
-    Service types (from prompts.py knowledge base):
-    - nhanh  : 3-6 days, 62,000-66,000 VND/kg (air freight)
-    - thuong : 5-10 days, 46,000-50,000 VND/kg (rail)
-    - bo     : 10-15 days, 32,000-36,000 VND/kg (economy)
-    - bolo   : 15-25 days, 12,000-16,000 VND/kg (batch, min 50kg / 0.3m³)
+    Returns structured JSON with status field.
     """
-    weight_kg = input.weight_kg
-    length_cm = input.length_cm
-    width_cm = input.width_cm
-    height_cm = input.height_cm
-    service_type = input.service_type
+    import math
 
-    # Volumetric weight calculation per service type rules
-    if service_type in ("nhanh", "thuong"):
-        volumetric_kg = (length_cm * width_cm * height_cm) / 6000
-        if volumetric_kg > weight_kg:
-            chargeable_kg = (volumetric_kg + weight_kg) / 2
+    def round_up_half(x: float) -> float:
+        """Round up to nearest 0.5 kg."""
+        return math.ceil(x * 2) / 2
+
+    def tier_price(service: str, kg: float) -> int | None:
+        """Return unit price VND/kg for the weight bracket, or None if not found."""
+        tiers: dict[str, list[tuple[float, int]]] = {
+            "fast": [
+                (50, 68500),
+                (150, 67500),
+                (250, 66500),
+                (350, 65500),
+                (500, 64500),
+            ],
+            "standard": [
+                (50, 52500),
+                (150, 51500),
+                (250, 40500),
+                (350, 49500),
+                (500, 48500),
+            ],
+            "bundle": [
+                (50, 38000),
+                (150, 37000),
+                (250, 36000),
+                (350, 35000),
+                (500, 34000),
+            ],
+            "lot": [
+                (150, 23500),
+                (250, 22500),
+                (350, 21500),
+                (500, 20500),
+            ],
+        }
+        for max_kg, price in tiers.get(service, []):
+            if kg <= max_kg:
+                return price
+        return None
+
+    # Collect missing fields
+    missing_fields = []
+    for field_name, value in [
+        ("service_type", input.service_type),
+        ("actual_weight_kg", input.actual_weight_kg),
+        ("length_cm", input.length_cm),
+        ("width_cm", input.width_cm),
+        ("height_cm", input.height_cm),
+    ]:
+        if value in (None, 0, ""):
+            missing_fields.append(field_name)
+
+    if input.service_type == "lot" and not input.is_same_item_lot:
+        if "is_same_item_lot" not in missing_fields:
+            missing_fields.append("is_same_item_lot")
+
+    if missing_fields:
+        return {
+            "status": "need_clarification",
+            "message_to_customer": "Anh/chị cho em xin đầy đủ thông tin để báo giá chính xác nhé.",
+            "missing_fields": missing_fields,
+        }
+
+    # --- Restrictions ---
+    if input.service_type == "fast":
+        if (
+            input.contains_battery
+            or input.contains_liquid
+            or input.contains_powder
+            or input.is_medical_item
+        ):
+            return {
+                "status": "rejected",
+                "message_to_customer": "Rất tiếc gói nhanh không nhận pin, chất lỏng, bột hoặc hàng y tế. Anh/chị vui lòng chọn gói khác.",
+                "reason": "Gói nhanh không nhận pin/chất lỏng/bột/y tế.",
+            }
+
+    if input.service_type in ("standard", "bundle") and input.is_medical_item:
+        return {
+            "status": "rejected",
+            "message_to_customer": "Gói đã chọn không nhận hàng y tế. Anh/chị vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ.",
+            "reason": "Hàng y tế không được chấp nhận cho gói standard/bundle.",
+        }
+
+    if input.is_cosmetic:
+        return {
+            "status": "manual_review",
+            "message_to_customer": "Mặt hàng mỹ phẩm cần báo giá riêng. Anh/chị vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ.",
+            "reason": "Mỹ phẩm cần báo giá riêng.",
+        }
+
+    if input.is_fake_or_branded_sensitive:
+        return {
+            "status": "manual_review",
+            "message_to_customer": "Mặt hàng này cần kiểm tra thêm trước khi báo giá. Anh/chị vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ.",
+            "reason": "Hàng nhạy cảm / fake / branded sensitive cần kiểm tra tay.",
+        }
+
+    # --- Volumetric calculation ---
+    volume = input.length_cm * input.width_cm * input.height_cm
+
+    if input.service_type in ("fast", "standard"):
+        volumetric_kg = volume / 6000
+        if volumetric_kg > input.actual_weight_kg:
+            chargeable_kg = (volumetric_kg + input.actual_weight_kg) / 2
         else:
-            chargeable_kg = weight_kg
+            chargeable_kg = input.actual_weight_kg
+    elif input.service_type == "bundle":
+        volumetric_kg = volume / 6000
+        chargeable_kg = max(volumetric_kg, input.actual_weight_kg)
+    elif input.service_type == "lot":
+        if not input.is_same_item_lot or input.actual_weight_kg < 50:
+            return {
+                "status": "manual_review",
+                "message_to_customer": "Hàng lô cần cùng một loại hàng và tối thiểu 50kg/lô. Anh/chị vui lòng kiểm tra lại.",
+                "reason": "Hàng lô cần cùng một loại và tối thiểu 50kg.",
+            }
+        chargeable_kg = volume / 5000
+    else:
+        return {
+            "status": "need_clarification",
+            "message_to_customer": "Anh/chị muốn đi nhanh, thường, bộ hay hàng lô?",
+            "missing_fields": ["service_type"],
+        }
 
-    elif service_type == "bo":
-        volumetric_kg = (length_cm * width_cm * height_cm) / 6000
-        chargeable_kg = max(volumetric_kg, weight_kg)
+    chargeable_kg = round_up_half(chargeable_kg)
 
-    elif service_type == "bolo":
-        # Batch: minimum 50kg, minimum 0.3m³
-        volumetric_m3 = (length_cm * width_cm * height_cm) / 1_000_000
-        volumetric_kg_from_m3 = volumetric_m3 * 250  # 250kg = 1m³
-        chargeable_kg = max(volumetric_kg_from_m3, weight_kg)
-        chargeable_kg = max(50.0, chargeable_kg)
-        volumetric_m3 = max(0.3, volumetric_m3)
+    if chargeable_kg > 500:
+        return {
+            "status": "manual_review",
+            "message_to_customer": "Đơn hàng từ 501kg trở lên cần kiểm tra và báo giá riêng. Anh/chị vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ.",
+            "reason": "Từ 501kg trở lên cần báo giá riêng.",
+        }
 
-    # Pricing (from prompts.py knowledge base)
-    rates: dict[str, tuple[int, int]] = {
-        "nhanh": (62_000, 66_000),
-        "thuong": (46_000, 50_000),
-        "bo": (32_000, 36_000),
-        "bolo": (12_000, 16_000),
+    unit_price = tier_price(input.service_type, chargeable_kg)
+    if unit_price is None:
+        return {
+            "status": "manual_review",
+            "message_to_customer": "Đơn này cần kiểm tra thêm để báo giá chính xác. Anh/chị vui lòng liên hệ Zalo 098.2128.029.",
+            "reason": "Không tìm thấy đơn giá phù hợp.",
+        }
+
+    subtotal_vnd = int(chargeable_kg * unit_price)
+    surcharges: list[dict] = []
+
+    if input.service_type == "lot":
+        cat = input.product_category.lower() if input.product_category else ""
+        if any(x in cat for x in ["tất", "khăn", "quần áo"]):
+            fee = int(chargeable_kg * 3000)
+            subtotal_vnd += fee
+            surcharges.append({"reason": "Phụ phí tất/khăn/quần áo", "amount_vnd": fee})
+
+        if input.is_fragile:
+            fee = int(chargeable_kg * 7000)
+            subtotal_vnd += fee
+            surcharges.append({"reason": "Phụ phí hàng dễ vỡ", "amount_vnd": fee})
+
+    insurance_fee_vnd = 0
+    if input.needs_insurance and input.declared_goods_value_vnd > 0:
+        insurance_fee_vnd = int(input.declared_goods_value_vnd * 0.05)
+
+    total_vnd = subtotal_vnd + insurance_fee_vnd
+
+    eta_map = {
+        "fast": "3-6 ngày",
+        "standard": "5-9 ngày",
+        "bundle": "10-15 ngày",
+        "lot": "15-25 ngày",
     }
-    rate_min, rate_max = rates[service_type]
 
-    total_min = int(chargeable_kg * rate_min)
-    total_max = int(chargeable_kg * rate_max)
+    discounts: list[dict] = []
+    if chargeable_kg > 100:
+        discounts.append(
+            {
+                "reason": "Voucher giao nội địa HCM cho hàng trên 100kg",
+                "amount_vnd": 125000,
+            }
+        )
 
-    service_labels: dict[str, str] = {
-        "nhanh": "Gói Nhanh (Hàng Bay) - 3-6 ngày",
-        "thuong": "Gói Thường - 5-10 ngày",
-        "bo": "Gói Bộ - 10-15 ngày",
-        "bolo": "Gói Bộ Lô (Kho Đông Hưng - Hóc Môn) - 15-25 ngày",
+    service_labels = {
+        "fast": "Gói Nhanh (Hàng Bay)",
+        "standard": "Gói Thường",
+        "bundle": "Gói Bộ",
+        "lot": "Gói Bộ Lô (Kho Đông Hưng - Hóc Môn)",
     }
 
-    result: dict[str, Any] = {
-        "success": True,
-        "chargeable_kg": round(chargeable_kg, 2),
-        "rate_per_kg": f"{rate_min:,}-{rate_max:,} VND/kg",
-        "estimated_total_vnd": f"{total_min:,}-{total_max:,} VND",
-        "service_type": service_type,
-        "service_label": service_labels[service_type],
+    # Build detailed breakdown message
+    lines = [
+        f"Dạ em báo giá cho anh/chị như sau:",
+        f"",
+        f"📦 **Gói dịch vụ:** {service_labels.get(input.service_type, input.service_type)} ({eta_map.get(input.service_type, 'N/A')})",
+        f"⚖️ **Cân nặng tính cước:** {chargeable_kg}kg",
+        f"💰 **Đơn giá:** {unit_price:,}đ/kg",
+        f"📋 **Cước phí chính:** {subtotal_vnd:,}đ",
+    ]
+
+    if surcharges:
+        for s in surcharges:
+            lines.append(f"➕ **Phụ phí:** {s['reason']} (+{s['amount_vnd']:,}đ)")
+    else:
+        lines.append(f"✅ Không có phụ phí")
+
+    if insurance_fee_vnd > 0:
+        lines.append(f"🛡️ **Bảo hiểm (5%):** {insurance_fee_vnd:,}đ")
+
+    if discounts:
+        for d in discounts:
+            lines.append(f"🎁 **Giảm giá:** {d['reason']} (-{d['amount_vnd']:,}đ)")
+
+    lines.append(f"")
+    lines.append(f"💵 **TỔNG CỘNG: {total_vnd:,}đ**")
+
+    message_to_customer = "\n".join(lines)
+
+    return {
+        "status": "quoted",
+        "message_to_customer": message_to_customer,
+        "quote_data": {
+            "service_type": input.service_type,
+            "chargeable_weight_kg": chargeable_kg,
+            "unit_price_vnd_per_kg": unit_price,
+            "subtotal_vnd": subtotal_vnd,
+            "insurance_fee_vnd": insurance_fee_vnd,
+            "total_vnd": total_vnd,
+            "eta": eta_map.get(input.service_type, "N/A"),
+            "surcharges": surcharges,
+            "discounts": discounts,
+        },
     }
-
-    if service_type == "bolo":
-        result["minimum_chargeable"] = "50kg hoặc 0.3m³"
-
-    return result

@@ -38,6 +38,8 @@ TOOL_WHITELIST = frozenset([
     "get_order_status",
     "create_support_ticket",
     "handoff_request",
+    "delegate_to_quote_agent",
+    "calculate_shipping_quote",
 ])
 
 
