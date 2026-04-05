@@ -9,6 +9,7 @@
 import asyncio
 import signal
 import sys
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 # Add project root to path for imports
@@ -16,8 +17,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from app.workers.conversation.consumer import ConversationConsumer
 from app.workers.shared.logging import get_logger, setup_logging
+from app.core.config import get_settings
 
+settings = get_settings()
 logger = get_logger("conversation-worker")
+
+WORKER_HEALTH_PORT = int(settings.worker_metrics_port)
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    """Simple health endpoint for Docker healthcheck."""
+
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"healthy")
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # Suppress request logging
+
+
+def start_health_server(port: int) -> None:
+    """Start a background HTTP server for health checks."""
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    asyncio.get_event_loop().run_in_executor(None, server.serve_forever)
+    logger.info(f"Health server started on port {port}")
 
 
 def main() -> None:
@@ -25,6 +54,9 @@ def main() -> None:
     from app.core.config import get_settings
     settings = get_settings()
     setup_logging(settings.log_level)
+
+    # Start health check server
+    start_health_server(WORKER_HEALTH_PORT)
 
     shutdown_event = asyncio.Event()
 

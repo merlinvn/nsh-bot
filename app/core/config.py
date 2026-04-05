@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 100
 
     # Worker
+    worker_metrics_port: int = 8080
     context_window_size: int = 10
     max_tool_calls: int = 2
     llm_timeout_seconds: int = 15

@@ -24,7 +24,7 @@ logger = get_logger("neochat.api.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Zalo OAuth endpoints
-ZALO_AUTH_URL = "https://oauth.zaloapp.com/v4/permission"
+ZALO_AUTH_URL = "https://oauth.zaloapp.com/v4/oa/permission"
 ZALO_TOKEN_URL = "https://oauth.zaloapp.com/v4/oa/access_token"
 
 
@@ -92,6 +92,7 @@ async def zalo_pkce(db=Depends(get_db)):
         f"&redirect_uri={callback_url}"
         f"&code_challenge={code_challenge}"
         f"&code_challenge_method=S256"
+        f"&state=hello"
     )
 
     logger.info("zalo_pkce_generated", extra={"code_challenge": code_challenge})
