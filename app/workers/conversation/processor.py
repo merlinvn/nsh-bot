@@ -16,7 +16,8 @@ from app.models.tool_call import ToolCall
 from app.workers.conversation.llm import BaseLLM, create_llm_client
 from app.workers.conversation.types import LLMResponse, ToolCallResult
 from app.workers.conversation.prompts import PromptManager
-from app.workers.conversation.tools import TOOL_DEFINITIONS, ToolExecutor, ToolResult
+from app.workers.conversation.registry import get_registry, LocalToolBackend, MAIN_AGENT_TOOLS
+from app.workers.conversation.tools import ToolExecutor, ToolResult
 from app.workers.shared.db import db_session
 from app.workers.shared.logging import get_logger
 from app.workers.shared.queue import get_channel
@@ -34,7 +35,10 @@ class ConversationProcessor:
     def __init__(self) -> None:
         self._llm: Optional[BaseLLM] = None
         self._prompt_manager = PromptManager()
-        self._tool_executor = ToolExecutor()
+        registry = get_registry()
+        backend = LocalToolBackend(registry)
+        self._tool_executor = ToolExecutor(backend)
+        self._registry = registry
 
     def _get_llm(self) -> BaseLLM:
         if self._llm is None:
@@ -276,7 +280,7 @@ class ConversationProcessor:
             response = await llm.complete(
                 system_prompt=system_prompt,
                 messages=messages,
-                tools=TOOL_DEFINITIONS,
+                tools=self._registry.definitions(allowed_names=MAIN_AGENT_TOOLS),
             )
 
             logger.info(
