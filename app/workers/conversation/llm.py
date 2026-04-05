@@ -1,6 +1,7 @@
 """LLM client wrappers for Anthropic and OpenAI-compatible endpoints."""
 
 import asyncio
+import json
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -225,20 +226,16 @@ class OpenAICompatLLM(BaseLLM):
                 # Tool calls (OpenAI format)
                 if "tool_calls" in message:
                     for tc in message["tool_calls"]:
+                        func = tc.get("function", {})
+                        args = func.get("arguments", {})
+                        # arguments may be a JSON string — parse if needed
+                        if isinstance(args, str):
+                            args = json.loads(args)
                         tool_calls.append(ToolCallResult(
                             id=tc.get("id", ""),
-                            name=tc.get("function", {}).get("name", ""),
-                            input=tc.get("function", {}).get("arguments", {}),
+                            name=func.get("name", ""),
+                            input=args,
                         ))
-
-                # Alternative: tool_call result in a later message (for parallel calls)
-                if "tool_call" in message:
-                    tc = message["tool_call"]
-                    tool_calls.append(ToolCallResult(
-                        id=tc.get("id", ""),
-                        name=tc.get("function", {}).get("name", ""),
-                        input=tc.get("function", {}).get("arguments", {}),
-                    ))
 
             logger.info(
                 "llm_response_received",

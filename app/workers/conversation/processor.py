@@ -27,7 +27,7 @@ OUTBOUND_QUEUE = "outbound.send"
 MAX_LLM_STEPS = 3
 MAX_TOOL_CALLS_PER_STEP = 2
 LLM_TIMEOUT_SECONDS = 15
-FALLBACK_TEXT = "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau ít phút."
+FALLBACK_TEXT = "Xin lỗi, hệ thống đang bận. Quý khách vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ ngay nhé!"
 
 
 class ConversationProcessor:

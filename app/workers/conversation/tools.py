@@ -115,7 +115,7 @@ class ToolExecutor:
             ToolResult with output dict and success flag
         """
         if tool_name not in TOOL_WHITELIST:
-            logger.warning("unknown_tool_rejected", tool_name=tool_name)
+            logger.warning("unknown_tool_rejected", extra={"tool_name": tool_name})
             return ToolResult(
                 output={"error": f"Unknown tool: {tool_name}"},
                 success=False,
@@ -142,7 +142,7 @@ class ToolExecutor:
             )
             return ToolResult(output=result, success=True)
         except asyncio.TimeoutError:
-            logger.error("tool_timeout", tool_name=tool_name)
+            logger.error("tool_timeout", extra={"tool_name": tool_name})
             return ToolResult(
                 output={"error": f"Tool '{tool_name}' timed out"},
                 success=False,
@@ -150,9 +150,11 @@ class ToolExecutor:
         except Exception as e:
             logger.error(
                 "tool_exception",
-                tool_name=tool_name,
-                error=str(e),
-                error_type=type(e).__name__,
+                extra={
+                    "tool_name": tool_name,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
             )
             return ToolResult(
                 output={"error": str(e)},
@@ -279,9 +281,11 @@ class ToolExecutor:
 
         logger.info(
             "support_ticket_created",
-            ticket_id=ticket_id,
-            subject=subject,
-            priority=priority,
+            extra={
+                "ticket_id": ticket_id,
+                "subject": subject,
+                "priority": priority,
+            },
         )
 
         return {
@@ -300,7 +304,7 @@ class ToolExecutor:
 
         logger.info(
             "handoff_requested",
-            reason=reason,
+            extra={"reason": reason},
         )
 
         return {

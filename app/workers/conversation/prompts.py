@@ -85,7 +85,7 @@ class PromptManager:
         if self._cache._fallback_prompt:
             return self._cache._fallback_prompt
 
-        return "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau ít phút."
+        return "Xin lỗi, hệ thống đang bận. Quý khách vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ ngay nhé!"
 
     async def _refresh(self) -> None:
         """Refresh prompt cache from database."""
