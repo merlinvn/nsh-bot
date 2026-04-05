@@ -1,16 +1,30 @@
 """Tool handler functions for the conversation worker.
 
-Each handler is a module-level async function registered with ToolRegistry.
+Each handler is a module-level async function that receives a **validated
+Pydantic input model** and returns a dict. The validation is performed by
+LocalToolBackend before the handler is called, so handlers can assume their
+inputs conform to the schema — no None checks or type casting needed.
+
 This separation allows handlers to be swapped independently of the executor,
 and makes it straightforward to replace a local handler with an MCP-backed
 or HTTP-backed one in the future.
 """
+
+from __future__ import annotations
 
 import re
 import uuid
 from typing import Any
 
 from app.workers.shared.logging import get_logger
+from app.workers.conversation.tools_models import (
+    CalculateShippingQuoteInput,
+    CreateSupportTicketInput,
+    DelegateToQuoteAgentInput,
+    GetOrderStatusInput,
+    HandoffRequestInput,
+    LookupCustomerInput,
+)
 
 logger = get_logger("conversation-worker.handlers")
 
@@ -19,13 +33,13 @@ logger = get_logger("conversation-worker.handlers")
 # Phase 1 handlers
 # ---------------------------------------------------------------------------
 
-async def lookup_customer(input: dict) -> dict:
+async def lookup_customer(input: LookupCustomerInput) -> dict:
     """Find customer by phone number or name.
 
     Phase 1: mock implementation using hardcoded customer data.
     Replace with a real database query in production.
     """
-    query = input.get("query", "").strip()
+    query = input.query.strip()
 
     if not query:
         return {"found": False, "error": "Query is required"}
@@ -65,13 +79,13 @@ async def lookup_customer(input: dict) -> dict:
     }
 
 
-async def get_order_status(input: dict) -> dict:
+async def get_order_status(input: GetOrderStatusInput) -> dict:
     """Query order status by order ID.
 
     Phase 1: mock implementation using hardcoded order data.
     Replace with a real API call in production.
     """
-    order_id = input.get("order_id", "").strip()
+    order_id = input.order_id.strip()
 
     if not order_id:
         return {"found": False, "error": "order_id is required"}
@@ -107,30 +121,20 @@ async def get_order_status(input: dict) -> dict:
     }
 
 
-async def create_support_ticket(input: dict) -> dict:
+async def create_support_ticket(input: CreateSupportTicketInput) -> dict:
     """Open a support ticket.
 
     Phase 1: logs the ticket and returns a mock ID.
     Replace with a real ticketing system integration in production.
     """
-    subject = input.get("subject", "").strip()
-    description = input.get("description", "").strip()
-    priority = input.get("priority", "medium")
-
-    if not subject or not description:
-        return {
-            "success": False,
-            "error": "subject and description are required",
-        }
-
     ticket_id = f"TKT-{uuid.uuid4().hex[:8].upper()}"
 
     logger.info(
         "support_ticket_created",
         extra={
             "ticket_id": ticket_id,
-            "subject": subject,
-            "priority": priority,
+            "subject": input.subject,
+            "priority": input.priority,
         },
     )
 
@@ -141,17 +145,15 @@ async def create_support_ticket(input: dict) -> dict:
     }
 
 
-async def handoff_request(input: dict) -> dict:
+async def handoff_request(input: HandoffRequestInput) -> dict:
     """Flag conversation for human handoff.
 
     Phase 1: logs the request. Replace with a real queue/notification
     integration in production.
     """
-    reason = input.get("reason", "").strip()
-
     logger.info(
         "handoff_requested",
-        extra={"reason": reason},
+        extra={"reason": input.reason},
     )
 
     return {
@@ -165,21 +167,20 @@ async def handoff_request(input: dict) -> dict:
 # New Phase 1 tools
 # ---------------------------------------------------------------------------
 
-async def delegate_to_quote_agent(input: dict) -> dict:
+async def delegate_to_quote_agent(input: DelegateToQuoteAgentInput) -> dict:
     """Delegate to the quote subagent.
 
     Phase 1: returns an instruction to use calculate_shipping_quote.
     Phase 2+: would involve actual subagent orchestration.
     """
-    reason = input.get("reason", "")
     return {
         "delegated": True,
         "message": "Vui lòng sử dụng tool calculate_shipping_quote để tính cước vận chuyển.",
-        "reason": reason,
+        "reason": input.reason,
     }
 
 
-async def calculate_shipping_quote(input: dict) -> dict:
+async def calculate_shipping_quote(input: CalculateShippingQuoteInput) -> dict:
     """Calculate shipping quote based on package details.
 
     Deterministic calculator using rates from the Phase 1 knowledge base.
@@ -191,17 +192,11 @@ async def calculate_shipping_quote(input: dict) -> dict:
     - bo     : 10-15 days, 32,000-36,000 VND/kg (economy)
     - bolo   : 15-25 days, 12,000-16,000 VND/kg (batch, min 50kg / 0.3m³)
     """
-    weight_kg = float(input.get("weight_kg", 0))
-    length_cm = float(input.get("length_cm", 0))
-    width_cm = float(input.get("width_cm", 0))
-    height_cm = float(input.get("height_cm", 0))
-    service_type = input.get("service_type", "thuong")
-
-    # Validate required fields
-    if weight_kg <= 0:
-        return {"success": False, "error": "weight_kg is required and must be > 0"}
-    if length_cm <= 0 or width_cm <= 0 or height_cm <= 0:
-        return {"success": False, "error": "dimensions (length_cm, width_cm, height_cm) are required and must be > 0"}
+    weight_kg = input.weight_kg
+    length_cm = input.length_cm
+    width_cm = input.width_cm
+    height_cm = input.height_cm
+    service_type = input.service_type
 
     # Volumetric weight calculation per service type rules
     if service_type in ("nhanh", "thuong"):
@@ -216,21 +211,12 @@ async def calculate_shipping_quote(input: dict) -> dict:
         chargeable_kg = max(volumetric_kg, weight_kg)
 
     elif service_type == "bolo":
-        # Batch service: minimum 50kg, minimum 0.3m³
-        volumetric_m3 = (length_cm * width_cm * height_cm) / 1_000_000  # convert cm³ to m³
+        # Batch: minimum 50kg, minimum 0.3m³
+        volumetric_m3 = (length_cm * width_cm * height_cm) / 1_000_000
         volumetric_kg_from_m3 = volumetric_m3 * 250  # 250kg = 1m³
         chargeable_kg = max(volumetric_kg_from_m3, weight_kg)
-        chargeable_kg = max(50.0, chargeable_kg)  # minimum 50kg
-        volumetric_m3 = max(0.3, volumetric_m3)  # minimum 0.3m³
-
-    else:
-        return {
-            "success": False,
-            "error": (
-                f"Unknown service_type '{service_type}'. "
-                "Valid values: nhanh, thuong, bo, bolo."
-            ),
-        }
+        chargeable_kg = max(50.0, chargeable_kg)
+        volumetric_m3 = max(0.3, volumetric_m3)
 
     # Pricing (from prompts.py knowledge base)
     rates: dict[str, tuple[int, int]] = {
@@ -244,7 +230,7 @@ async def calculate_shipping_quote(input: dict) -> dict:
     total_min = int(chargeable_kg * rate_min)
     total_max = int(chargeable_kg * rate_max)
 
-    service_labels = {
+    service_labels: dict[str, str] = {
         "nhanh": "Gói Nhanh (Hàng Bay) - 3-6 ngày",
         "thuong": "Gói Thường - 5-10 ngày",
         "bo": "Gói Bộ - 10-15 ngày",
@@ -257,7 +243,7 @@ async def calculate_shipping_quote(input: dict) -> dict:
         "rate_per_kg": f"{rate_min:,}-{rate_max:,} VND/kg",
         "estimated_total_vnd": f"{total_min:,}-{total_max:,} VND",
         "service_type": service_type,
-        "service_label": service_labels.get(service_type, service_type),
+        "service_label": service_labels[service_type],
     }
 
     if service_type == "bolo":

@@ -4,7 +4,7 @@ Backward-compatibility shim — all new code should use registry.py directly.
 
 Exports preserved for backward compatibility with existing imports:
 - TOOL_WHITELIST: frozenset of the 4 Phase 1 tool names
-- TOOL_DEFINITIONS: static list of tool schemas (Phase 1 whitelist only)
+- TOOL_DEFINITIONS: generated from Pydantic models via the registry
 - ToolResult: result dataclass
 - ToolExecutor: thin wrapper delegating to LocalToolBackend
 
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
 
 from app.workers.shared.logging import get_logger
 
@@ -116,89 +115,36 @@ class ToolExecutor:
 
 
 # ---------------------------------------------------------------------------
-# TOOL_DEFINITIONS — static Phase 1 list for backward compatibility
+# TOOL_DEFINITIONS — generated from Pydantic models via the registry
 # ---------------------------------------------------------------------------
 
-TOOL_DEFINITIONS = [
-    {
-        "name": "lookup_customer",
-        "description": (
-            "Find customer by phone number or name. Use this when a customer "
-            "provides their phone number or name and you need to look up "
-            "their account information."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Phone number or name to search for",
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "get_order_status",
-        "description": (
-            "Query the status of an order by order ID. Use this when a "
-            "customer asks about their order status."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "order_id": {
-                    "type": "string",
-                    "description": "The order ID to look up",
-                },
-            },
-            "required": ["order_id"],
-        },
-    },
-    {
-        "name": "create_support_ticket",
-        "description": (
-            "Open a support ticket for customer issues that cannot be "
-            "resolved through the available tools. Use when a customer has "
-            "a complaint, refund request, or needs human agent assistance."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "subject": {
-                    "type": "string",
-                    "description": "Brief subject/summary of the issue",
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Detailed description of the issue",
-                },
-                "priority": {
-                    "type": "string",
-                    "enum": ["low", "medium", "high"],
-                    "description": "Priority level",
-                },
-            },
-            "required": ["subject", "description"],
-        },
-    },
-    {
-        "name": "handoff_request",
-        "description": (
-            "Flag this conversation for immediate human agent handoff. "
-            "Use this sparingly — only when the customer explicitly requests "
-            "a human, or the issue requires human judgment beyond what "
-            "tools can provide."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "reason": {
-                    "type": "string",
-                    "description": "Reason for the handoff request",
-                },
-            },
-            "required": ["reason"],
-        },
-    },
-]
+# Generate at import time from the global registry for backward compat.
+# This uses the Pydantic input models to produce LLM tool definitions,
+# ensuring TOOL_DEFINITIONS always matches what the registry exposes.
+_TOOL_DEFINITIONS_CACHE: list[dict] | None = None
+
+
+def _get_tool_definitions() -> list[dict]:
+    """Lazily build and cache TOOL_DEFINITIONS from the global registry."""
+    global _TOOL_DEFINITIONS_CACHE
+    if _TOOL_DEFINITIONS_CACHE is None:
+        registry = get_registry()
+        _TOOL_DEFINITIONS_CACHE = registry.definitions(allowed_names=TOOL_WHITELIST)
+    return _TOOL_DEFINITIONS_CACHE
+
+
+class _TOOL_DEFINITIONS_Proxy:
+    """Lazy list proxy so len() and iteration work on TOOL_DEFINITIONS."""
+
+    def __iter__(self):
+        return iter(_get_tool_definitions())
+
+    def __len__(self) -> int:
+        return len(_get_tool_definitions())
+
+    def __getitem__(self, index):
+        return _get_tool_definitions()[index]
+
+
+# Use a proxy object so existing code that iterates or calls len() works
+TOOL_DEFINITIONS = _TOOL_DEFINITIONS_Proxy()  # type: ignore[assignment]

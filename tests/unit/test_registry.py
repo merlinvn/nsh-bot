@@ -11,6 +11,12 @@ from app.workers.conversation.registry import (
     LocalToolBackend,
     get_registry,
 )
+from app.workers.conversation.tools_models import (
+    LookupCustomerInput,
+    CreateSupportTicketInput,
+    CalculateShippingQuoteInput,
+    DelegateToQuoteAgentInput,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -22,7 +28,7 @@ def test_tool_spec_defaults():
     spec = ToolSpec(
         name="test",
         description="A test",
-        input_schema={},
+        input_model=LookupCustomerInput,
         handler=handlers.lookup_customer,
     )
     assert spec.timeout_seconds == 5.0
@@ -35,7 +41,7 @@ def test_tool_spec_custom_values():
     spec = ToolSpec(
         name="test",
         description="A test",
-        input_schema={},
+        input_model=LookupCustomerInput,
         handler=handlers.lookup_customer,
         timeout_seconds=10.0,
         enabled=False,
@@ -57,7 +63,7 @@ async def test_register_and_get_tool():
     spec = ToolSpec(
         name="test_tool",
         description="A test tool",
-        input_schema={"type": "object", "properties": {}},
+        input_model=LookupCustomerInput,
         handler=handlers.lookup_customer,
     )
     registry.register(spec)
@@ -80,7 +86,7 @@ async def test_register_duplicate_raises():
     spec = ToolSpec(
         name="dup_tool",
         description="A test",
-        input_schema={},
+        input_model=LookupCustomerInput,
         handler=handlers.lookup_customer,
     )
     registry.register(spec)
@@ -92,8 +98,8 @@ async def test_register_duplicate_raises():
 async def test_definitions_returns_all_enabled_by_default():
     """definitions() returns all enabled tools with no filter."""
     registry = ToolRegistry()
-    registry.register(ToolSpec(name="a", description="", input_schema={}, handler=handlers.lookup_customer, enabled=True))
-    registry.register(ToolSpec(name="b", description="", input_schema={}, handler=handlers.get_order_status, enabled=True))
+    registry.register(ToolSpec(name="a", description="", input_model=LookupCustomerInput, handler=handlers.lookup_customer, enabled=True))
+    registry.register(ToolSpec(name="b", description="", input_model=CreateSupportTicketInput, handler=handlers.get_order_status, enabled=True))
     defs = registry.definitions()
     names = {d["name"] for d in defs}
     assert names == {"a", "b"}
@@ -103,8 +109,8 @@ async def test_definitions_returns_all_enabled_by_default():
 async def test_definitions_filters_by_allowed_names():
     """definitions(allowed_names=...) excludes tools not in the set."""
     registry = ToolRegistry()
-    registry.register(ToolSpec(name="tool_a", description="", input_schema={}, handler=handlers.lookup_customer, enabled=True))
-    registry.register(ToolSpec(name="tool_b", description="", input_schema={}, handler=handlers.get_order_status, enabled=True))
+    registry.register(ToolSpec(name="tool_a", description="", input_model=LookupCustomerInput, handler=handlers.lookup_customer, enabled=True))
+    registry.register(ToolSpec(name="tool_b", description="", input_model=CreateSupportTicketInput, handler=handlers.get_order_status, enabled=True))
     defs = registry.definitions(allowed_names={"tool_a"})
     assert len(defs) == 1
     assert defs[0]["name"] == "tool_a"
@@ -114,8 +120,8 @@ async def test_definitions_filters_by_allowed_names():
 async def test_definitions_excludes_disabled_by_default():
     """definitions() excludes disabled tools."""
     registry = ToolRegistry()
-    registry.register(ToolSpec(name="enabled_tool", description="", input_schema={}, handler=handlers.lookup_customer, enabled=True))
-    registry.register(ToolSpec(name="disabled_tool", description="", input_schema={}, handler=handlers.get_order_status, enabled=False))
+    registry.register(ToolSpec(name="enabled_tool", description="", input_model=LookupCustomerInput, handler=handlers.lookup_customer, enabled=True))
+    registry.register(ToolSpec(name="disabled_tool", description="", input_model=CreateSupportTicketInput, handler=handlers.get_order_status, enabled=False))
     defs = registry.definitions()
     names = {d["name"] for d in defs}
     assert "enabled_tool" in names
@@ -126,7 +132,7 @@ async def test_definitions_excludes_disabled_by_default():
 async def test_definitions_includes_disabled_when_flagged():
     """definitions(include_disabled=True) includes disabled tools."""
     registry = ToolRegistry()
-    registry.register(ToolSpec(name="disabled_tool", description="", input_schema={}, handler=handlers.lookup_customer, enabled=False))
+    registry.register(ToolSpec(name="disabled_tool", description="", input_model=LookupCustomerInput, handler=handlers.lookup_customer, enabled=False))
     defs = registry.definitions(include_disabled=True)
     assert any(d["name"] == "disabled_tool" for d in defs)
 
@@ -142,7 +148,7 @@ async def test_local_backend_calls_handler():
     spec = ToolSpec(
         name="lookup_customer",
         description="",
-        input_schema={"type": "object", "properties": {}},
+        input_model=LookupCustomerInput,
         handler=handlers.lookup_customer,
         timeout_seconds=5.0,
         enabled=True,
@@ -170,7 +176,7 @@ async def test_local_backend_disabled_tool_raises():
     spec = ToolSpec(
         name="disabled_tool",
         description="",
-        input_schema={},
+        input_model=LookupCustomerInput,
         handler=handlers.lookup_customer,
         enabled=False,
     )
@@ -225,7 +231,7 @@ def test_quote_agent_tools():
 @pytest.mark.asyncio
 async def test_delegate_to_quote_agent():
     """delegate_to_quote_agent returns delegation instruction."""
-    result = await handlers.delegate_to_quote_agent({})
+    result = await handlers.delegate_to_quote_agent(DelegateToQuoteAgentInput())
     assert result["delegated"] is True
     assert "calculate_shipping_quote" in result["message"]
 
@@ -233,13 +239,13 @@ async def test_delegate_to_quote_agent():
 @pytest.mark.asyncio
 async def test_calculate_shipping_quote_nhanh():
     """calculate_shipping_quote computes correct estimate for 'nhanh'."""
-    result = await handlers.calculate_shipping_quote({
-        "weight_kg": 5.0,
-        "length_cm": 30,
-        "width_cm": 20,
-        "height_cm": 10,
-        "service_type": "nhanh",
-    })
+    result = await handlers.calculate_shipping_quote(CalculateShippingQuoteInput(
+        weight_kg=5.0,
+        length_cm=30,
+        width_cm=20,
+        height_cm=10,
+        service_type="nhanh",
+    ))
     assert result["success"] is True
     assert result["service_type"] == "nhanh"
     assert "estimated_total_vnd" in result
@@ -248,13 +254,13 @@ async def test_calculate_shipping_quote_nhanh():
 @pytest.mark.asyncio
 async def test_calculate_shipping_quote_bolo():
     """calculate_shipping_quote applies minimum charge for bolo."""
-    result = await handlers.calculate_shipping_quote({
-        "weight_kg": 1.0,
-        "length_cm": 10,
-        "width_cm": 10,
-        "height_cm": 10,
-        "service_type": "bolo",
-    })
+    result = await handlers.calculate_shipping_quote(CalculateShippingQuoteInput(
+        weight_kg=1.0,
+        length_cm=10,
+        width_cm=10,
+        height_cm=10,
+        service_type="bolo",
+    ))
     assert result["success"] is True
     # 0.0002 m³ * 250 = 0.05kg < 50kg minimum → should be 50kg
     assert result["chargeable_kg"] == 50.0
@@ -263,25 +269,23 @@ async def test_calculate_shipping_quote_bolo():
 @pytest.mark.asyncio
 async def test_calculate_shipping_quote_missing_weight():
     """calculate_shipping_quote rejects missing weight."""
-    result = await handlers.calculate_shipping_quote({
-        "length_cm": 30,
-        "width_cm": 20,
-        "height_cm": 10,
-        "service_type": "thuong",
-    })
-    assert result["success"] is False
-    assert "weight_kg" in result["error"]
+    with pytest.raises(Exception):  # Pydantic validation error
+        CalculateShippingQuoteInput(
+            length_cm=30,
+            width_cm=20,
+            height_cm=10,
+            service_type="thuong",
+        )
 
 
 @pytest.mark.asyncio
 async def test_calculate_shipping_quote_unknown_service():
     """calculate_shipping_quote rejects unknown service type."""
-    result = await handlers.calculate_shipping_quote({
-        "weight_kg": 5.0,
-        "length_cm": 30,
-        "width_cm": 20,
-        "height_cm": 10,
-        "service_type": "invalid_type",
-    })
-    assert result["success"] is False
-    assert "Unknown service_type" in result["error"]
+    with pytest.raises(Exception):  # Pydantic validation error
+        CalculateShippingQuoteInput(
+            weight_kg=5.0,
+            length_cm=30,
+            width_cm=20,
+            height_cm=10,
+            service_type="invalid_type",
+        )
