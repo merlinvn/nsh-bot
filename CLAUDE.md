@@ -6,20 +6,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NeoChatPlatform is a multi-phase AI conversation platform starting with Zalo OA (Vietnamese messaging platform). Phase 1 focuses on building a production-ready Zalo chatbot agent.
 
-## Architecture (Phase 1)
+## Architecture (Phase 1 + Phase 2)
 
 ```
 Zalo → Webhook (FastAPI) → RabbitMQ (conversation.process) → Conversation Worker → RabbitMQ (outbound.send) → Outbound Worker → Zalo API
+         ↓
+Admin Browser (Next.js) ──► Admin API (FastAPI /admin/*) ──► PostgreSQL / Redis / RabbitMQ
 ```
 
 ### Components
 
-- **Webhook API**: FastAPI service receiving Zalo webhooks, response < 200ms
+**Backend (FastAPI):**
+- **Webhook API**: Receives Zalo webhooks, response < 200ms
 - **Conversation Worker**: Processes messages through LLM agent + tools
 - **Outbound Worker**: Sends messages to Zalo API with retry logic
-- **PostgreSQL**: Stores conversations, messages, tool calls, delivery attempts, prompts
-- **Redis**: Message deduplication, caching
+- **Admin API**: `/admin/*` routes for the control plane (auth, prompts, conversations, analytics, playground, tokens, monitoring)
+- **PostgreSQL**: Stores conversations, messages, tool calls, delivery attempts, prompts, admin_users, benchmark_results
+- **Redis**: Message deduplication, caching, admin sessions
 - **RabbitMQ**: Durable message queues for async processing
+
+**Frontend (Next.js 14):**
+- **Admin UI**: `/admin/*` pages for conversation management, analytics, prompt versioning, LLM playground, token management, monitoring
 
 ## Package Management
 
@@ -76,10 +83,56 @@ docker-compose exec api /bin/sh
 ## Data Model
 
 - **Conversations**: id, external_user_id, conversation_key, status, timestamps
-- **Messages**: id, conversation_id, direction, text, model, latency, token_usage
+- **Messages**: id, conversation_id, direction, text, model, latency, token_usage, error
 - **ToolCalls**: tool_name, input, output, success, latency
 - **DeliveryAttempts**: status, attempt_no, response, error
 - **Prompts**: template, versions, active_version
+- **AdminUsers**: id, username, password_hash, is_active, last_login_at, failed_login_attempts, locked_until
+- **BenchmarkResults**: id, name, status, iterations, error, created_at, completed_at
+- **BenchmarkItems**: id, benchmark_id, model_provider, model_name, avg_latency_ms, p95_latency_ms, avg_input_tokens, avg_output_tokens, total_cost, raw_results
+
+## Admin API Endpoints
+
+All `/admin/*` routes require session cookie authentication (except login).
+
+| Route | Description |
+|-------|-------------|
+| `POST /admin/auth/login` | Login with username/password |
+| `POST /admin/auth/logout` | Logout (clear session) |
+| `GET /admin/auth/me` | Get current user info |
+| `POST /admin/auth/password` | Change own password |
+| `GET /admin/prompts` | List all prompts |
+| `POST /admin/prompts` | Create new prompt |
+| `GET /admin/prompts/{name}` | Get prompt detail |
+| `PUT /admin/prompts/{name}` | Update prompt (new version) |
+| `DELETE /admin/prompts/{name}` | Delete prompt |
+| `POST /admin/prompts/{name}/versions` | Create new version |
+| `POST /admin/prompts/{name}/activate` | Activate a version |
+| `GET /admin/prompts/{name}/versions` | List all versions |
+| `GET /admin/conversations` | List conversations (paginated) |
+| `GET /admin/conversations/{id}` | Get conversation + messages |
+| `POST /admin/conversations/{id}/replay` | Dry-run replay (no Zalo delivery) |
+| `GET /admin/conversations/stats` | Conversation statistics |
+| `GET /admin/conversations/{id}/messages` | List messages in conversation |
+| `GET /admin/analytics/overview` | Dashboard overview |
+| `GET /admin/analytics/messages` | Message volume over time |
+| `GET /admin/analytics/latency` | LLM latency percentiles |
+| `GET /admin/analytics/tools` | Tool usage breakdown |
+| `GET /admin/analytics/fallbacks` | Fallback rates |
+| `GET /admin/analytics/tokens` | Token usage summary |
+| `POST /admin/playground/complete` | Single completion test |
+| `POST /admin/playground/benchmark` | Run benchmark |
+| `GET /admin/playground/benchmark/{id}` | Get benchmark result |
+| `GET /admin/playground/benchmark/{id}/results` | Get benchmark detailed results |
+| `GET /admin/playground/models` | List available models |
+| `GET /admin/zalo-tokens/status` | Current token status |
+| `POST /admin/zalo-tokens/pkce` | Generate PKCE pair |
+| `POST /admin/zalo-tokens/refresh` | Refresh access token |
+| `DELETE /admin/zalo-tokens` | Revoke tokens |
+| `GET /admin/monitoring/health` | Detailed health check |
+| `GET /admin/monitoring/metrics` | JSON metrics for UI |
+| `GET /admin/monitoring/workers` | Worker status |
+| `GET /admin/monitoring/queues` | Queue depths |
 
 ## API Endpoints
 
@@ -88,8 +141,8 @@ Internal: conversation management, replay, prompt activation
 
 ## Phase Roadmap
 
-1. **Phase 1** (current): Zalo Chat Agent MVP
-2. **Phase 2**: Admin UI, analytics, prompt management
+1. **Phase 1** ✅: Zalo Chat Agent MVP
+2. **Phase 2** (current): Admin Control Plane — auth, analytics, prompt management, LLM playground, token management, monitoring
 3. **Phase 3**: Multi-channel (Telegram, Facebook Messenger)
 4. **Phase 4**: RAG/knowledge base
 5. **Phase 5**: Multi-tenant, Kubernetes, A/B testing
@@ -102,6 +155,8 @@ Internal: conversation management, replay, prompt activation
 - All Zalo API calls go through outbound worker (never directly from webhook)
 - **LLM Tool Format**: OpenAI-compatible LLM clients use `{"type": "function", "function": {...}}` format, NOT Anthropic's `{"name": ..., "input_schema": ...}`. The `OpenAICompatLLM._convert_tools()` method handles this conversion.
 - **Zalo Token**: If Zalo returns `-216 Access token is invalid`, the token was revoked server-side. Update via script: `docker-compose exec -T api uv run python app/api/scripts/update_zalo_token.py --access-token "token"`
+- **Admin Bootstrap**: After first DB setup, create the initial admin user: `docker-compose exec api uv run python app/api/scripts/create_admin_user.py --username admin --password 'your-password'`
+- **Admin Session**: Sessions are Redis-backed (24h fixed TTL). Cookie is httpOnly + SameSite=Lax. CSRF token returned in login response body, sent as `X-CSRF-Token` header on state-changing requests.
 
 ## Testing
 

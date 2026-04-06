@@ -9,30 +9,22 @@ dependencies = [
     "uvicorn[standard]>=0.34.0",
     "pydantic>=2.10.0",
     "pydantic-settings>=2.7.0",
-
     # Database
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
-
     # Redis
     "redis>=5.2.0",
-
     # RabbitMQ
     "aio-pika>=9.4.0",
-
     # LLM
     "anthropic>=0.42.0",
-
     # HTTP client
     "httpx>=0.28.0",
-
     # Logging
     "structlog>=24.4.0",
-
     # Metrics
     "prometheus-client>=0.21.0",
-
     # Testing
     "pytest>=8.3.0",
     "pytest-asyncio>=0.25.0",
@@ -41,6 +33,7 @@ dependencies = [
     "httpx>=0.28.0",
     "fakeredis>=2.26.0",
     "aioresponses>=0.7.0",
+    "bcrypt>=5.0.0",
 ]
 
 [build-system]

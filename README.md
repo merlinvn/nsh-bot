@@ -1,21 +1,31 @@
 # NeoChatPlatform
 
-Multi-phase AI conversation platform starting with Zalo OA (Vietnamese messaging platform). Phase 1 focuses on building a production-ready Zalo chatbot agent.
+Multi-phase AI conversation platform starting with Zalo OA (Vietnamese messaging platform).
+
+- **Phase 1** ✅: Zalo Chat Agent MVP
+- **Phase 2** ✅: Admin Control Plane (auth, analytics, prompt management, LLM playground, monitoring)
 
 ## Architecture
 
 ```
 Zalo → Webhook (FastAPI) → RabbitMQ (conversation.process) → Conversation Worker → RabbitMQ (outbound.send) → Outbound Worker → Zalo API
+         ↓
+Admin Browser (Next.js) ──► Admin API (FastAPI /admin/*) ──► PostgreSQL / Redis / RabbitMQ
 ```
 
 ### Components
 
+**Backend (FastAPI):**
 - **Webhook API**: FastAPI service receiving Zalo webhooks, response < 200ms
 - **Conversation Worker**: Processes messages through LLM agent + tools
 - **Outbound Worker**: Sends messages to Zalo API with retry logic
-- **PostgreSQL**: Stores conversations, messages, tool calls, delivery attempts, prompts
-- **Redis**: Message deduplication, caching
+- **Admin API**: `/admin/*` routes for the control plane
+- **PostgreSQL**: Stores conversations, messages, tool calls, delivery attempts, prompts, admin users, benchmark results
+- **Redis**: Message deduplication, caching, admin sessions
 - **RabbitMQ**: Durable message queues for async processing
+
+**Frontend (Next.js 14):**
+- **Admin UI**: `/admin/*` pages for conversation management, analytics, prompt versioning, LLM playground, token management, monitoring
 
 ## Quick Start
 
@@ -399,15 +409,89 @@ tests/
 - Tool whitelist: `lookup_customer`, `get_order_status`, `create_support_ticket`, `handoff_request`
 - Fallback prompts for unclear intents
 
+### Admin Session Management
+- Session ID generated server-side (32 random bytes hex), stored in Redis with 24h fixed TTL
+- httpOnly + SameSite=Lax cookie — browser JS cannot access session ID
+- CSRF token in login response body, sent as `X-CSRF-Token` header on POST/PUT/DELETE
+- Password change revokes all sessions for that user
+
 ## API Endpoints
 
-Public: `POST /webhooks/zalo`, `GET /health/live`, `GET /health/ready`
-Internal: conversation management, replay, prompt activation
+**Public:** `POST /webhooks/zalo`, `GET /health/live`, `GET /health/ready`
+
+**Admin:** See Admin Control Plane section above — all `/admin/*` routes (session cookie auth required)
+
+**Internal:** conversation management, replay, prompt activation
 
 ## Phase Roadmap
 
-1. **Phase 1** (current): Zalo Chat Agent MVP
-2. **Phase 2**: Admin UI, analytics, prompt management
+1. **Phase 1** ✅: Zalo Chat Agent MVP
+2. **Phase 2** ✅: Admin Control Plane
 3. **Phase 3**: Multi-channel (Telegram, Facebook Messenger)
 4. **Phase 4**: RAG/knowledge base
 5. **Phase 5**: Multi-tenant, Kubernetes, A/B testing
+
+## Admin Control Plane (Phase 2)
+
+The Admin Control Plane is a Next.js 14 frontend with a FastAPI backend embedded in the same service.
+
+### Quick Start
+
+```bash
+# 1. Create the initial admin user (run once after DB migration)
+docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
+  --username admin --password 'your-secure-password'
+
+# 2. Start the frontend
+cd frontend
+npm install
+npm run dev
+
+# 3. Open http://localhost:3000/admin
+```
+
+### Admin Features
+
+| Page | Description |
+|------|-------------|
+| `/admin/analytics` | Dashboard with message volume, latency, fallback rates |
+| `/admin/conversations` | List and inspect conversations with message history |
+| `/admin/prompts` | CRUD + version management + activation |
+| `/admin/playground` | LLM completion testing and model benchmarking |
+| `/admin/tokens` | Zalo token status, refresh, revoke |
+| `/admin/monitoring` | System health, metrics, worker status |
+
+### Admin Auth
+
+- Single admin account with username/password
+- Cookie-backed session (24h fixed TTL, stored in Redis)
+- CSRF token returned in login response, sent as `X-CSRF-Token` header on state-changing requests
+- Account lockout after 5 failed login attempts (15 min)
+- Login rate limiting: 10 attempts/min per IP
+
+### Frontend Development
+
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Development
+npm run dev
+
+# Build for production
+npm run build
+
+# Type check
+npx tsc --noEmit
+```
+
+Required environment variable in `frontend/.env.local`:
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+### Backend Admin API
+
+All `/admin/*` endpoints require an active session cookie. The frontend runs on port 3000; the backend on port 8000. CORS is configured for `localhost:3000` in development.
