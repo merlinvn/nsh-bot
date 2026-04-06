@@ -14,9 +14,11 @@ Phase 2 delivers an admin control plane for NeoChatPlatform: a web-based UI to m
 - **Frontend:** Next.js 14+ (App Router), separate from API, deployable independently
 - **Backend:** Embedded in existing FastAPI service — extend with `/admin/*` routes, no new service
 - **Auth:** JWT-based with short-lived access tokens (15m) + rotatable refresh tokens (7d), stored in DB
-- **Frontend Auth:** NextAuth.js with Credentials provider, httpOnly cookies, protected route middleware
-- **Admin Model:** Simple username/password (bcrypt hashed), single-role initially (admin/super_admin)
+- **Frontend Auth:** Simple session with access token in memory, refresh via body rotation
+- **Admin Model:** Single admin role — all authenticated users have full access. Security enhanced in future phases.
 - **LLM Focus:** OpenAI-compatible model support for playground and benchmarking
+- **Analytics:** Polling via React Query (30s interval) — no WebSocket complexity for Phase 2
+- **CORS:** FastAPI CORS configured for frontend origin — no Next.js proxy needed
 
 **Out of scope:** SSO, multi-tenant, mobile, A/B testing (Phase 5).
 
@@ -69,8 +71,8 @@ Phase 2 delivers an admin control plane for NeoChatPlatform: a web-based UI to m
 | Concern | Value |
 |---------|-------|
 | API Base | `NEXT_PUBLIC_API_URL` env var (default: `http://localhost:8000`) |
-| Auth Cookie | httpOnly, `Secure` in production, `SameSite=Lax` |
-| API Proxy (optional) | Next.js API routes can proxy to backend (avoids CORS in prod) |
+| Auth | Tokens in React Context (memory only) — never localStorage |
+| CORS | FastAPI configured with frontend origin — same-machine deploy uses Docker network |
 | Dev CORS | Backend allows `http://localhost:3000` for Next.js dev server |
 
 ---
@@ -87,7 +89,7 @@ Stores admin accounts for panel access.
 | `id` | UUID | PK |
 | `username` | VARCHAR(64) | UNIQUE, NOT NULL |
 | `password_hash` | VARCHAR(256) | NOT NULL (bcrypt, work factor 12) |
-| `role` | VARCHAR(32) | NOT NULL, DEFAULT `'admin'` — values: `'admin'`, `'super_admin'` |
+| `role` | VARCHAR(32) | NOT NULL, DEFAULT `'admin'` — only `'admin'` for Phase 2 |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE |
 | `last_login_at` | TIMESTAMPTZ | NULL |
 | `failed_login_attempts` | INTEGER | NOT NULL, DEFAULT 0 |
@@ -201,11 +203,11 @@ All admin endpoints use JWT Bearer authentication (except login and OAuth callba
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
 | GET | `/admin/prompts` | List all prompts | JWT |
-| POST | `/admin/prompts` | Create new prompt | JWT (super_admin) |
+| POST | `/admin/prompts` | Create new prompt | JWT |
 | GET | `/admin/prompts/{name}` | Get prompt detail | JWT |
-| PUT | `/admin/prompts/{name}` | Update prompt template | JWT (super_admin) |
-| DELETE | `/admin/prompts/{name}` | Delete prompt | JWT (super_admin) |
-| POST | `/admin/prompts/{name}/versions` | Create new version | JWT (super_admin) |
+| PUT | `/admin/prompts/{name}` | Update prompt template | JWT |
+| DELETE | `/admin/prompts/{name}` | Delete prompt | JWT |
+| POST | `/admin/prompts/{name}/versions` | Create new version | JWT |
 | POST | `/admin/prompts/{name}/activate` | Activate a version | JWT |
 | GET | `/admin/prompts/{name}/versions` | List all versions | JWT |
 
@@ -239,7 +241,7 @@ All admin endpoints use JWT Bearer authentication (except login and OAuth callba
 | POST | `/admin/playground/benchmark` | Run benchmark | JWT |
 | GET | `/admin/playground/benchmark/{id}` | Get benchmark result | JWT |
 | GET | `/admin/playground/models` | List available models | JWT |
-| POST | `/admin/playground/models` | Add custom model | JWT (super_admin) |
+| POST | `/admin/playground/models` | Add custom model | JWT |
 
 ### 4.7 Zalo Token Endpoints
 
@@ -249,7 +251,7 @@ All admin endpoints use JWT Bearer authentication (except login and OAuth callba
 | POST | `/admin/zalo-tokens/pkce` | Generate PKCE pair | JWT |
 | GET | `/admin/zalo-tokens/callback` | OAuth callback (Zalo redirects) | None |
 | POST | `/admin/zalo-tokens/refresh` | Refresh access token | JWT |
-| DELETE | `/admin/zalo-tokens` | Revoke tokens | JWT (super_admin) |
+| DELETE | `/admin/zalo-tokens` | Revoke tokens | JWT |
 
 ### 4.8 Monitoring Endpoints
 
@@ -266,18 +268,20 @@ All admin endpoints use JWT Bearer authentication (except login and OAuth callba
 Login:
   POST /admin/auth/login {username, password}
   → 200 {access_token, refresh_token, expires_in}
-  → httpOnly cookie set (refresh_token), Authorization header (access_token)
+  → Tokens stored in React Context (memory only, never localStorage)
 
 Authenticated requests:
   Authorization: Bearer <access_token>
 
 Token refresh:
   POST /admin/auth/refresh {refresh_token}
-  → 200 {access_token, expires_in} (rotated)
+  → 200 {access_token, expires_in, new_refresh_token} (rotated)
+  → Client updates both tokens in memory
 
 Logout:
   POST /admin/auth/logout {refresh_token}
   → Revokes refresh token in DB
+  → Clears tokens from React Context
 ```
 
 ---
@@ -291,7 +295,7 @@ Logout:
 | Framework | Next.js 14+ (App Router) | SSR for analytics, file-based routing, API route proxy, deploy flexibility |
 | Language | TypeScript (strict) | Type safety |
 | Styling | Tailwind CSS + shadcn/ui | Consistent, accessible components |
-| State | Zustand (auth/UI) + React Query (server) | Lightweight, clear separation |
+| State | React Query (server) + React Context (auth) | One less library to maintain, sufficient for 6 pages |
 | Forms | React Hook Form + Zod | Validation |
 | Charts | Recharts | Simple, composable |
 | Auth | NextAuth.js Credentials provider | Handles sessions, protected routes, httpOnly cookies |
@@ -360,13 +364,14 @@ Sidebar (fixed left, collapsible to icon-only):
 
 ## 6. Key Design Decisions
 
-### 6.1 Auth: JWT with httpOnly cookies
-- Access token (15m TTL) sent via `Authorization: Bearer` header (not cookie — more explicit for API calls)
-- Refresh token (7d TTL) stored in httpOnly cookie OR in localStorage for manual refresh
+### 6.1 Auth: Simple JWT with body rotation
+- Access token (15m TTL) stored in React Context/memory, sent via `Authorization: Bearer` header
+- Refresh token (7d TTL) stored in React Context/memory, sent in request body for rotation
 - Refresh token rotation: each refresh issues a new refresh token
 - All tokens revoked on password change, individual token revocation on logout
 - Account lockout after 5 failed attempts (15 min)
-- Super_admin role required for: create/update/delete prompts, delete tokens, add custom models
+- **Phase 2:** Single admin role — no endpoint-level role guards
+- **Phase 3+:** Add role-based access (admin vs super_admin) when needed
 
 ### 6.2 Backend embedded, not separate
 - `/admin/*` routes added to existing FastAPI app
