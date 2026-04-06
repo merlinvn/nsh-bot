@@ -1,470 +1,579 @@
-# NeoChatPlatform Phase 2 — Admin Control Plane Design
+# Phase 2 Backend Architecture Design
 
 **Date:** 2026-04-05
-**Status:** Draft — Pending User Review
-**Team:** backend-architect + frontend-architect
+**Author:** Backend Architect
+**Status:** Draft
 
 ---
 
-## 1. Overview
+## 1. Admin Auth Data Model
 
-Phase 2 delivers an admin control plane for NeoChatPlatform: a web-based UI to manage conversations, prompts, analytics, LLM benchmarking, Zalo token lifecycle, and system monitoring.
+### 1.1 Design Decisions
 
-**Key decisions:**
-- **Frontend:** Next.js 14+ (App Router), separate from API, deployable independently
-- **Backend:** Embedded in existing FastAPI service — extend with `/admin/*` routes, no new service
-- **Auth:** JWT-based with short-lived access tokens (15m) + rotatable refresh tokens (7d), stored in DB
-- **Frontend Auth:** Simple session with access token in memory, refresh via body rotation
-- **Admin Model:** Single admin role — all authenticated users have full access. Security enhanced in future phases.
-- **LLM Focus:** OpenAI-compatible model support for playground and benchmarking
-- **Analytics:** Polling via React Query (30s interval) — no WebSocket complexity for Phase 2
-- **CORS:** FastAPI CORS configured for frontend origin — no Next.js proxy needed
+- **Cookie-based session authentication** using Redis for session storage
+- **No JWT tokens** — session ID stored in HttpOnly cookie, validated server-side via Redis lookup
+- **Bcrypt hashing** for passwords (work factor 12)
+- **Single admin user** — no role hierarchy in Phase 2
 
-**Out of scope:** SSO, multi-tenant, mobile, A/B testing (Phase 5).
+### 1.2 Session Design
 
----
-
-## 2. Architecture
-
-### 2.1 System Context
+Sessions are stored in Redis with the following structure:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Admin Browser (Next.js)                       │
-│   /admin/auth, /admin/conversations, /admin/prompts, etc.          │
-└─────────────────────────────────────────────────────────────────────┘
-                                │ HTTPS + JWT (httpOnly cookie)
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    FastAPI (port 8000)                                │
-│                                                                      │
-│   Existing (Phase 1):          New (Phase 2):                       │
-│   ├── /webhooks/*               └── /admin/*                        │
-│   ├── /health/*                    ├── /admin/auth/*                │
-│   └── /internal/*                   ├── /admin/prompts/*            │
-│                                        ├── /admin/conversations/*    │
-│                                        ├── /admin/analytics/*        │
-│                                        ├── /admin/playground/*       │
-│                                        ├── /admin/zalo-tokens/*       │
-│                                        └── /admin/monitoring/*       │
-└─────────────────────────────────────────────────────────────────────┘
-                                │
-          ┌─────────────────────┼─────────────────────┐
-          ▼                     ▼                     ▼
-   PostgreSQL              Redis                  RabbitMQ
-   (data + admin_users,    (session cache,        (queues unchanged)
-    admin_refresh_tokens)    dedup)
+Key: session:<session_id>
+Value: JSON { "user_id": "uuid", "username": "admin", "created_at": "ISO8601" }
+TTL: 24 hours (configurable)
 ```
 
-### 2.2 Backend Integration Points
+The `session_id` is a cryptographically random 32-byte hex string (64 hex characters), generated using `secrets.token_hex(32)`.
 
-| Concern | Phase 1 | Phase 2 Extension |
-|---------|---------|-------------------|
-| Router | `app/api/routers/` | New `app/api/routers/admin/` |
-| Models | `app/models/` | New `admin_user`, `admin_refresh_token`, `benchmark_result`, `benchmark_item` |
-| Schemas | `app/api/schemas/` | New `admin.py`, `analytics.py`, `playground.py` |
-| Dependencies | `app/api/dependencies.py` | Add `get_current_admin_user`, `require_role` |
-| Main | `app/api/main.py` | Add `admin_router` with `/admin/*` prefix |
+Cookie settings:
+- `HttpOnly`: true (prevents JavaScript access)
+- `Secure`: true in production (HTTPS only)
+- `SameSite`: Lax
+- `Max-Age`: 86400 (24 hours)
 
-### 2.3 Frontend Integration Points
+### 1.3 New Table: `admin_users`
 
-| Concern | Value |
-|---------|-------|
-| API Base | `NEXT_PUBLIC_API_URL` env var (default: `http://localhost:8000`) |
-| Auth | Tokens in React Context (memory only) — never localStorage |
-| CORS | FastAPI configured with frontend origin — same-machine deploy uses Docker network |
-| Dev CORS | Backend allows `http://localhost:3000` for Next.js dev server |
+Stores the single admin account.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PK, default uuid4 | User ID |
+| `username` | VARCHAR(64) | UNIQUE, NOT NULL | Login username |
+| `password_hash` | VARCHAR(256) | NOT NULL | Bcrypt hash of password |
+| `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | Account enabled/disabled |
+| `last_login_at` | TIMESTAMPTZ | NULL | Last successful login |
+| `failed_login_attempts` | INTEGER | NOT NULL, DEFAULT 0 | Consecutive failed attempts |
+| `locked_until` | TIMESTAMPTZ | NULL | Account lockout expiry |
+| `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation time |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | Last update time |
+
+**Indexes:**
+- `ix_admin_users_username` on `username`
+
+**Note:** The `role` column exists in the schema for forward compatibility but no logic in Phase 2 depends on it.
+
+### 1.4 Removed: `admin_refresh_tokens` Table
+
+This table is **not created**. Refresh token logic does not apply to cookie-based sessions.
+
+### 1.5 Security Considerations
+
+- **Password policy:** Stored as bcrypt hash (work factor 12)
+- **Account lockout:** After 5 consecutive failed logins, lock for 15 minutes
+- **Session expiry:** 24 hours; user must re-login after expiry
+- **Logout:** Invalidates session immediately by deleting from Redis
+- **Rate limiting:** Login endpoint limited to 10 attempts per minute per IP
 
 ---
 
-## 3. Data Model
+## 2. New API Endpoints Design
 
-### 3.1 New Tables
+All admin endpoints live under `/admin/*` and use session cookie authentication.
+
+### 2.1 Router Structure
+
+```
+/admin/
+├── auth/           # Authentication (login, logout, me)
+├── prompts/        # Prompt CRUD and version management
+├── conversations/  # Conversation list, detail, replay
+├── analytics/      # Metrics and dashboards
+├── playground/     # LLM playground and benchmarking
+├── zalo-tokens/    # Zalo OAuth token management
+└── monitoring/    # Health checks, metrics
+```
+
+### 2.2 Admin Auth Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/admin/auth/login` | Login with username/password | None |
+| POST | `/admin/auth/logout` | Logout (invalidate session) | Session cookie |
+| GET | `/admin/auth/me` | Get current user info | Session cookie |
+
+**Login Request:**
+```json
+{
+  "username": "admin",
+  "password": "secret123"
+}
+```
+
+**Login Response:**
+```json
+{
+  "ok": true,
+  "user": {
+    "username": "admin"
+  }
+}
+```
+
+**Login sets cookie:**
+```
+Set-Cookie: session_id=<random-hex>; HttpOnly; Secure; SameSite=Lax; Max-Age=86400
+```
+
+### 2.3 Prompt Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/admin/prompts` | List all prompts | Session |
+| POST | `/admin/prompts` | Create new prompt | Session |
+| GET | `/admin/prompts/{name}` | Get prompt detail | Session |
+| PUT | `/admin/prompts/{name}` | Update prompt template | Session |
+| DELETE | `/admin/prompts/{name}` | Delete prompt | Session |
+| POST | `/admin/prompts/{name}/versions` | Create new version | Session |
+| POST | `/admin/prompts/{name}/activate` | Activate a version | Session |
+| GET | `/admin/prompts/{name}/versions` | List all versions | Session |
+
+### 2.4 Conversation Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/admin/conversations` | List conversations (paginated) | Session |
+| GET | `/admin/conversations/{id}` | Get conversation detail | Session |
+| POST | `/admin/conversations/{id}/replay` | Replay last message (dry-run) | Session |
+| GET | `/admin/conversations/{id}/messages` | List messages in conversation | Session |
+| GET | `/admin/conversations/stats` | Get conversation statistics | Session |
+
+**Note on `/admin/conversations/{id}/replay`:** This is a **dry-run only** endpoint. It re-queues the conversation's last message for internal reprocessing through the conversation worker. It does NOT deliver any message to Zalo. The replayed message is processed as if it were a new inbound message, but any outbound response is logged only — not sent to the user.
+
+### 2.5 Analytics Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/admin/analytics/overview` | Dashboard overview metrics | Session |
+| GET | `/admin/analytics/messages` | Message volume over time | Session |
+| GET | `/admin/analytics/latency` | LLM latency percentiles | Session |
+| GET | `/admin/analytics/tools` | Tool usage breakdown | Session |
+| GET | `/admin/analytics/fallbacks` | Fallback rates | Session |
+| GET | `/admin/analytics/tokens` | Token usage summary | Session |
+
+### 2.6 LLM Playground Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| POST | `/admin/playground/complete` | Single completion test | Session |
+| POST | `/admin/playground/benchmark` | Run benchmark against models | Session |
+| GET | `/admin/playground/benchmark/{id}` | Get benchmark results | Session |
+| GET | `/admin/playground/benchmark/{id}/results` | Get benchmark detailed results | Session |
+| GET | `/admin/playground/models` | List available models | Session |
+
+**Note on API keys:** Custom model API key storage is **out of scope for Phase 2**. The playground accepts a model configuration at request time but does not persist API keys to the database. For OpenAI-compatible endpoints, the user provides any required credentials per-request.
+
+### 2.7 Zalo Token Management Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/admin/zalo-tokens/status` | Get current token status | Session |
+| POST | `/admin/zalo-tokens/pkce` | Generate new PKCE pair | Session |
+| GET | `/admin/zalo-tokens/callback` | Handle OAuth callback | None (Zalo redirects) |
+| POST | `/admin/zalo-tokens/refresh` | Refresh access token | Session |
+| DELETE | `/admin/zalo-tokens` | Revoke tokens | Session |
+
+### 2.8 Monitoring Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/admin/monitoring/health` | Detailed health check | Session |
+| GET | `/admin/monitoring/metrics` | Metrics dashboard data (JSON) | Session |
+| GET | `/admin/monitoring/workers` | Worker status | Session |
+| GET | `/admin/monitoring/queues` | Queue depths | Session |
+
+**Note on `/admin/monitoring/metrics`:** This endpoint returns **JSON-formatted metrics** for the monitoring dashboard UI. It is NOT a Prometheus scrape endpoint. If Prometheus integration is needed in the future, a separate `/metrics` endpoint with Prometheus text format would be added.
+
+---
+
+## 3. Database Schema Changes
+
+### 3.1 Summary of Changes
+
+| Change | Type | Description |
+|--------|------|-------------|
+| `admin_users` | NEW TABLE | Single admin account |
+| `benchmark_results` | NEW TABLE | Playground benchmark results |
+| `benchmark_items` | NEW TABLE | Individual benchmark test items |
+| `conversations` | NEW INDEX | Index on `created_at` for time-range queries |
+| `messages` | NEW INDEX | Index on `created_at` for time-range queries |
+| `messages` | NEW COLUMN | `error` column for failed messages |
+
+### 3.2 New Tables Detail
 
 #### `admin_users`
-Stores admin accounts for panel access.
 
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `username` | VARCHAR(64) | UNIQUE, NOT NULL |
-| `password_hash` | VARCHAR(256) | NOT NULL (bcrypt, work factor 12) |
-| `role` | VARCHAR(32) | NOT NULL, DEFAULT `'admin'` — only `'admin'` for Phase 2 |
-| `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE |
-| `last_login_at` | TIMESTAMPTZ | NULL |
-| `failed_login_attempts` | INTEGER | NOT NULL, DEFAULT 0 |
-| `locked_until` | TIMESTAMPTZ | NULL (account lockout after 5 failed attempts, 15 min) |
-| `created_at` | TIMESTAMPTZ | NOT NULL |
-| `updated_at` | TIMESTAMPTZ | NOT NULL |
-
-**Indexes:** `ix_admin_users_username`, `ix_admin_users_role`
-
-#### `admin_refresh_tokens`
-Stores active refresh tokens for revocation support.
-
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `user_id` | UUID | FK → `admin_users.id` |
-| `token_hash` | VARCHAR(256) | UNIQUE, NOT NULL (SHA-256 of token value) |
-| `expires_at` | TIMESTAMPTZ | NOT NULL |
-| `created_at` | TIMESTAMPTZ | NOT NULL |
-| `revoked_at` | TIMESTAMPTZ | NULL |
-
-**Indexes:** `ix_admin_refresh_tokens_user_id`, `ix_admin_refresh_tokens_token_hash`, `ix_admin_refresh_tokens_expires_at`
-
-#### `benchmark_results`
-Stores playground benchmark runs.
-
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `name` | VARCHAR(128) | NOT NULL |
-| `status` | VARCHAR(32) | NOT NULL — `pending`, `running`, `completed`, `failed` |
-| `iterations` | INTEGER | NOT NULL |
-| `error` | TEXT | NULL |
-| `created_by` | UUID | FK → `admin_users.id` |
-| `created_at` | TIMESTAMPTZ | NOT NULL |
-| `completed_at` | TIMESTAMPTZ | NULL |
-
-#### `benchmark_items`
-Stores per-model results within a benchmark.
-
-| Column | Type | Constraints |
-|--------|------|-------------|
-| `id` | UUID | PK |
-| `benchmark_id` | UUID | FK → `benchmark_results.id` |
-| `model_provider` | VARCHAR(32) | NOT NULL (`anthropic`, `openai-compat`) |
-| `model_name` | VARCHAR(128) | NOT NULL |
-| `base_url` | VARCHAR(256) | NULL (custom endpoint for openai-compat) |
-| `api_key` | VARCHAR(256) | NULL (encrypted or masked) |
-| `avg_latency_ms` | FLOAT | NULL |
-| `p95_latency_ms` | FLOAT | NULL |
-| `avg_input_tokens` | INTEGER | NULL |
-| `avg_output_tokens` | INTEGER | NULL |
-| `total_cost` | FLOAT | NULL |
-| `raw_results` | JSONB | NULL (full iteration details) |
-
-### 3.2 Schema Additions to Existing Tables
-
-**`messages` — add `error` column:**
 ```sql
-ALTER TABLE messages ADD COLUMN error TEXT NULL;
+CREATE TABLE admin_users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username VARCHAR(64) UNIQUE NOT NULL,
+    password_hash VARCHAR(256) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    last_login_at TIMESTAMPTZ NULL,
+    failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_admin_users_username ON admin_users (username);
 ```
 
-**New indexes for analytics queries:**
+#### `benchmark_results`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PK | Result ID |
+| `name` | VARCHAR(128) | NOT NULL | Benchmark name |
+| `status` | VARCHAR(32) | NOT NULL | pending/running/completed/failed |
+| `iterations` | INTEGER | NOT NULL | Number of iterations per model |
+| `error` | TEXT | NULL | Error message if failed |
+| `created_by` | UUID | FK -> admin_users.id | Who started it |
+| `created_at` | TIMESTAMPTZ | NOT NULL | Start time |
+| `completed_at` | TIMESTAMPTZ | NULL | Completion time |
+
+#### `benchmark_items`
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PK | Item ID |
+| `benchmark_id` | UUID | FK -> benchmark_results.id | Parent benchmark |
+| `model_provider` | VARCHAR(32) | NOT NULL | anthropic/openai-compat |
+| `model_name` | VARCHAR(128) | NOT NULL | Model identifier |
+| `base_url` | VARCHAR(256) | NULL | Custom endpoint URL |
+| `avg_latency_ms` | FLOAT | NULL | Average latency |
+| `p95_latency_ms` | FLOAT | NULL | P95 latency |
+| `avg_input_tokens` | INTEGER | NULL | Average input tokens |
+| `avg_output_tokens` | INTEGER | NULL | Average output tokens |
+| `total_cost` | FLOAT | NULL | Estimated cost |
+| `raw_results` | JSONB | NULL | Full iteration results |
+
+**Note:** `api_key` column is intentionally omitted. API keys are not stored in Phase 2.
+
+### 3.3 Index Additions
+
 ```sql
 CREATE INDEX ix_conversations_created_at ON conversations (created_at DESC);
 CREATE INDEX ix_messages_created_at ON messages (created_at DESC);
 CREATE INDEX ix_messages_direction_created ON messages (direction, created_at DESC);
 ```
 
+### 3.4 Column Additions
+
+```sql
+ALTER TABLE messages ADD COLUMN error TEXT NULL;
+```
+
 ---
 
-## 4. API Design
+## 4. Auth Flow
 
-All admin endpoints use JWT Bearer authentication (except login and OAuth callback).
-
-### 4.1 Router Structure
+### 4.1 Login Flow
 
 ```
-/admin/
-├── auth/              # Login, logout, refresh, me, password change
-├── prompts/           # CRUD + versioning + activation
-├── conversations/     # List, detail, replay, message history
-├── analytics/         # Overview, message volume, latency, tools, fallbacks, tokens
-├── playground/        # Single completion, benchmark, models
-├── zalo-tokens/       # Status, PKCE OAuth, refresh, revoke
-└── monitoring/        # Health, metrics, workers, queues
+Browser                                     API
+  |                                          |
+  |--- POST /admin/auth/login -------------->|
+  |     {username, password}                 |
+  |                                          |
+  |     1. Lookup admin_users by username    |
+  |     2. Check is_active, locked_until     |
+  |     3. Verify bcrypt password            |
+  |     4. If failed: increment failed_     |
+  |        login_attempts, lock if >= 5      |
+  |     5. If success: reset failed_attempts|
+  |        update last_login_at              |
+  |     6. Generate session_id (secrets.     |
+  |        token_hex(32))                   |
+  |     7. Store in Redis: session:<id>    |
+  |        -> {user_id, username, ts}        |
+  |     8. Set HttpOnly cookie               |
+  |     9. Log auth event                    |
+  |                                          |
+  |<-- 200 OK {ok: true, user: {...}}       |
+  |     Set-Cookie: session_id=...           |
+  |                                          |
 ```
 
-### 4.2 Auth Endpoints
+### 4.2 Authenticated Request Flow
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| POST | `/admin/auth/login` | Login with username/password | None |
-| POST | `/admin/auth/logout` | Logout (revoke refresh token) | JWT |
-| POST | `/admin/auth/refresh` | Refresh access token | Refresh token (body) |
-| GET | `/admin/auth/me` | Get current user info | JWT |
-| POST | `/admin/auth/password` | Change own password | JWT |
+```
+Browser                                     API
+  |                                          |
+  |--- GET /admin/prompts ----------------->|
+  |     Cookie: session_id=<id>             |
+  |                                          |
+  |     1. Extract session_id from cookie   |
+  |     2. Lookup Redis: session:<id>       |
+  |     3. If not found: 401 Unauthorized   |
+  |     4. If found: attach user to request |
+  |                                          |
+  |<-- 200 OK {prompts: [...]}              |
+  |                                          |
+```
 
-**Login response:**
+### 4.3 Logout Flow
+
+```
+Browser                                     API
+  |                                          |
+  |--- POST /admin/auth/logout ------------>|
+  |     Cookie: session_id=<id>             |
+  |                                          |
+  |     1. Extract session_id from cookie   |
+  |     2. DELETE Redis: session:<id>      |
+  |     3. Clear cookie (Max-Age=0)        |
+  |     4. Log logout event                 |
+  |                                          |
+  |<-- 200 OK                               |
+  |     Set-Cookie: session_id=; Max-Age=0   |
+  |                                          |
+```
+
+### 4.4 Session Expiry
+
+Sessions expire automatically after 24 hours via Redis TTL. The browser will receive a 401 on the next request after expiry, prompting re-login.
+
+---
+
+## 5. API Authentication
+
+### 5.1 Authentication Methods Comparison
+
+| Endpoint Type | Auth Method | Where Defined | Use Case |
+|---------------|-------------|--------------|----------|
+| `/webhooks/*` | Signature verification | Zalo webhook secret | Zalo inbound messages |
+| `/internal/*` | X-Internal-Api-Key header | Shared secret in config | Internal service-to-service |
+| `/admin/*` | Session cookie (HttpOnly) | Redis session store | Admin UI browser client |
+
+### 5.2 Dependency Injection
+
+**Session-based auth dependency:**
+```python
+# app/api/dependencies.py
+
+async def get_current_admin_user(
+    session_id: str | None = Cookie(None, alias="session_id"),
+    redis: Redis = Depends(get_redis),
+) -> AdminUser:
+    """Validate session cookie and return current admin user."""
+    if not session_id:
+        raise HTTPException(401, {"code": "NOT_AUTHENTICATED", "message": "Login required"})
+
+    session_data = await redis.get(f"session:{session_id}")
+    if not session_data:
+        raise HTTPException(401, {"code": "SESSION_EXPIRED", "message": "Session expired, please re-login"})
+
+    # session_data = {"user_id": "...", "username": "admin"}
+    # Lookup user, check is_active, return
+```
+
+### 5.3 Endpoint Protection
+
+All `/admin/*` endpoints require a valid session cookie. No role-based access control in Phase 2 — the single admin has full access to all endpoints.
+
+### 5.4 Migration Strategy
+
+Existing internal endpoints (`/internal/*`) remain unchanged — they continue to use `X-Internal-Api-Key`. This means:
+- Existing internal clients (workers, scripts) don't need changes
+- Admin UI uses new session-cookie-based `/admin/*` endpoints
+- No breaking changes to Phase 1 functionality
+
+---
+
+## 6. Frontend Auth State
+
+### 6.1 Login Form
+
+The login form posts username/password to `POST /admin/auth/login`. On success, the backend sets the session cookie automatically. The frontend does not store any tokens.
+
+### 6.2 Auth State Management
+
+The frontend uses React Context to track:
+- `user: { username: string } | null` — current user info from `/admin/auth/me`
+- `isAuthenticated: boolean` — whether a session exists
+
+On app load, call `GET /admin/auth/me` to restore auth state from the session cookie.
+
+### 6.3 No Token Storage
+
+- **No Bearer tokens** stored in memory or localStorage
+- **No JWT decode** in frontend
+- **No token refresh** logic
+- Session cookie is HttpOnly — inaccessible to JavaScript
+- All subsequent requests send the cookie automatically via browser
+
+### 6.4 Logout
+
+On logout, call `POST /admin/auth/logout` which clears the cookie server-side. Frontend clears its auth context state.
+
+---
+
+## 7. LLM Playground Backend
+
+### 7.1 Architecture
+
+The playground runs within the API process, reusing the existing LLM client infrastructure from `app.workers.conversation.llm`.
+
+```
+Admin UI Browser
+      |
+      | HTTPS + Session Cookie
+      v
+FastAPI /admin/playground/*
+      |
+      +-- Single Completion: Direct LLM call, return response
+      |
+      +-- Benchmark: Async task, store results in DB
+```
+
+### 7.2 API Key Handling
+
+**Phase 2 does not store API keys.** For OpenAI-compatible model benchmarks:
+- The user provides credentials (base_url, api_key) in the benchmark request
+- These are used for the duration of the benchmark only
+- No credentials are persisted to the database
+
+### 7.3 Benchmark Request Example
+
 ```json
 {
-  "access_token": "eyJhbGc...",
-  "refresh_token": "eyJhbGc...",
-  "token_type": "bearer",
-  "expires_in": 900
+  "test_prompts": [
+    {
+      "name": "greeting",
+      "messages": [{"role": "user", "content": "Say hello in 5 words or less"}]
+    }
+  ],
+  "models": [
+    {"provider": "anthropic", "name": "claude-sonnet-4-20250514"},
+    {"provider": "openai-compat", "name": "llama3.2", "base_url": "http://localhost:11434/v1", "api_key": "ollama"}
+  ],
+  "iterations": 3
 }
 ```
 
-### 4.3 Prompt Endpoints
+---
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/admin/prompts` | List all prompts | JWT |
-| POST | `/admin/prompts` | Create new prompt | JWT |
-| GET | `/admin/prompts/{name}` | Get prompt detail | JWT |
-| PUT | `/admin/prompts/{name}` | Update prompt template | JWT |
-| DELETE | `/admin/prompts/{name}` | Delete prompt | JWT |
-| POST | `/admin/prompts/{name}/versions` | Create new version | JWT |
-| POST | `/admin/prompts/{name}/activate` | Activate a version | JWT |
-| GET | `/admin/prompts/{name}/versions` | List all versions | JWT |
+## 8. Implementation Priority
 
-### 4.4 Conversation Endpoints
+### Phase 2A (Admin Core)
+1. `admin_users` table + seed script
+2. Redis session infrastructure
+3. `/admin/auth/*` endpoints (login, logout, me)
+4. `/admin/monitoring/health`
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/admin/conversations` | List (paginated, filterable) | JWT |
-| GET | `/admin/conversations/{id}` | Get conversation + messages + tool calls | JWT |
-| POST | `/admin/conversations/{id}/replay` | Replay last message | JWT |
-| GET | `/admin/conversations/stats` | Get conversation statistics | JWT |
+### Phase 2B (Conversation Management)
+1. Extend existing `/internal/conversations` to `/admin/conversations`
+2. Replay endpoint (dry-run only)
 
-**Query params for list:** `user_id`, `status`, `created_after`, `created_before`, `page`, `size`, `sort`, `order`
+### Phase 2C (Prompt Management)
+1. Prompt CRUD endpoints
+2. Version management
+3. Activation endpoint
 
-### 4.5 Analytics Endpoints
+### Phase 2D (Analytics)
+1. Analytics query endpoints
+2. Dashboard overview endpoint
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/admin/analytics/overview` | Dashboard overview | JWT |
-| GET | `/admin/analytics/messages` | Message volume over time | JWT |
-| GET | `/admin/analytics/latency` | LLM latency percentiles | JWT |
-| GET | `/admin/analytics/tools` | Tool usage breakdown | JWT |
-| GET | `/admin/analytics/fallbacks` | Fallback rates | JWT |
-| GET | `/admin/analytics/tokens` | Token usage summary | JWT |
+### Phase 2E (LLM Playground)
+1. Single completion endpoint
+2. Benchmark infrastructure
+3. Results storage and retrieval
 
-### 4.6 Playground Endpoints
-
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| POST | `/admin/playground/complete` | Single completion test | JWT |
-| POST | `/admin/playground/benchmark` | Run benchmark | JWT |
-| GET | `/admin/playground/benchmark/{id}` | Get benchmark result | JWT |
-| GET | `/admin/playground/models` | List available models | JWT |
-| POST | `/admin/playground/models` | Add custom model | JWT |
-
-### 4.7 Zalo Token Endpoints
-
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/admin/zalo-tokens/status` | Current token status | JWT |
-| POST | `/admin/zalo-tokens/pkce` | Generate PKCE pair | JWT |
-| GET | `/admin/zalo-tokens/callback` | OAuth callback (Zalo redirects) | None |
-| POST | `/admin/zalo-tokens/refresh` | Refresh access token | JWT |
-| DELETE | `/admin/zalo-tokens` | Revoke tokens | JWT |
-
-### 4.8 Monitoring Endpoints
-
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/admin/monitoring/health` | Detailed health check | JWT |
-| GET | `/admin/monitoring/metrics` | Prometheus metrics | JWT |
-| GET | `/admin/monitoring/workers` | Worker status | JWT |
-| GET | `/admin/monitoring/queues` | Queue depths | JWT |
-
-### 4.9 Auth Flow Summary
-
-```
-Login:
-  POST /admin/auth/login {username, password}
-  → 200 {access_token, refresh_token, expires_in}
-  → Tokens stored in React Context (memory only, never localStorage)
-
-Authenticated requests:
-  Authorization: Bearer <access_token>
-
-Token refresh:
-  POST /admin/auth/refresh {refresh_token}
-  → 200 {access_token, expires_in, new_refresh_token} (rotated)
-  → Client updates both tokens in memory
-
-Logout:
-  POST /admin/auth/logout {refresh_token}
-  → Revokes refresh token in DB
-  → Clears tokens from React Context
-```
+### Phase 2F (Zalo Token Management)
+1. Expose existing Zalo OAuth flow via admin endpoints
+2. Token status and refresh endpoints
 
 ---
 
-## 5. Frontend Architecture
-
-### 5.1 Tech Stack
-
-| Layer | Choice | Rationale |
-|-------|--------|-----------|
-| Framework | Next.js 14+ (App Router) | SSR for analytics, file-based routing, API route proxy, deploy flexibility |
-| Language | TypeScript (strict) | Type safety |
-| Styling | Tailwind CSS + shadcn/ui | Consistent, accessible components |
-| State | React Query (server) + React Context (auth) | One less library to maintain, sufficient for 6 pages |
-| Forms | React Hook Form + Zod | Validation |
-| Charts | Recharts | Simple, composable |
-| Auth | NextAuth.js Credentials provider | Handles sessions, protected routes, httpOnly cookies |
-
-### 5.2 Folder Structure
-
-```
-frontend/
-├── src/
-│   ├── app/
-│   │   ├── (auth)/              # Auth layout group
-│   │   │   ├── login/
-│   │   │   └── layout.tsx
-│   │   ├── (admin)/             # Protected admin layout group
-│   │   │   ├── layout.tsx       # Sidebar + header + content
-│   │   │   ├── page.tsx         # Dashboard (redirect)
-│   │   │   ├── conversations/
-│   │   │   ├── prompts/
-│   │   │   ├── analytics/
-│   │   │   ├── playground/
-│   │   │   ├── tokens/
-│   │   │   └── monitoring/
-│   │   ├── api/                 # Optional proxy routes
-│   │   ├── layout.tsx
-│   │   └── page.tsx
-│   ├── components/
-│   │   ├── ui/                  # shadcn/ui base
-│   │   ├── admin/               # Sidebar, Header, DataTable, StatusBadge, ConfirmDialog
-│   │   └── forms/
-│   ├── lib/
-│   │   ├── api.ts               # Typed API client
-│   │   ├── auth.ts              # Auth utilities
-│   │   └── utils.ts
-│   ├── hooks/
-│   │   ├── useAuth.ts
-│   │   └── useApi.ts
-│   ├── stores/
-│   │   └── authStore.ts
-│   └── types/
-│       └── api.ts
-└── .env.local                   # NEXT_PUBLIC_API_URL
-```
-
-### 5.3 Navigation
-
-```
-Sidebar (fixed left, collapsible to icon-only):
-├── Dashboard      → /admin (analytics overview)
-├── Conversations  → /admin/conversations
-├── Prompts        → /admin/prompts
-├── Playground     → /admin/playground
-├── Tokens         → /admin/tokens
-└── Monitoring     → /admin/monitoring
-```
-
-### 5.4 Build Priority
-
-| Phase | Duration | Deliverables |
-|-------|----------|---------------|
-| **Phase 1 (MVP)** | 2 weeks | Auth + Shell, Conversation list/detail |
-| **Phase 2** | 3 weeks | Prompt management, Analytics dashboard |
-| **Phase 3** | 2 weeks | LLM Playground (chat, streaming), Token management |
-| **Phase 4** | 1 week | Monitoring dashboard, Polish |
-
----
-
-## 6. Key Design Decisions
-
-### 6.1 Auth: Simple JWT with body rotation
-- Access token (15m TTL) stored in React Context/memory, sent via `Authorization: Bearer` header
-- Refresh token (7d TTL) stored in React Context/memory, sent in request body for rotation
-- Refresh token rotation: each refresh issues a new refresh token
-- All tokens revoked on password change, individual token revocation on logout
-- Account lockout after 5 failed attempts (15 min)
-- **Phase 2:** Single admin role — no endpoint-level role guards
-- **Phase 3+:** Add role-based access (admin vs super_admin) when needed
-
-### 6.2 Backend embedded, not separate
-- `/admin/*` routes added to existing FastAPI app
-- Same PostgreSQL, Redis, RabbitMQ as Phase 1
-- No new service to operate
-- Existing `/internal/*` endpoints unchanged — Phase 1 keeps working
-
-### 6.3 Playground reuses existing LLM clients
-- `app.workers.conversation.llm.AnthropicLLM` and `OpenAICompatLLM` imported directly
-- Benchmarks run as async background tasks, results stored in DB, polled via GET
-- Single completions are synchronous (60s timeout)
-
-### 6.4 Zalo PKCE OAuth UI
-- Current: `update_zalo_token.py` script
-- Phase 2: Admin UI with "Connect Zalo" button → redirect to Zalo OAuth → callback stores tokens
-- Endpoint `GET /admin/zalo-tokens/callback` handles OAuth redirect from Zalo
-
----
-
-## 7. Security Considerations
-
-- **JWT secret:** Generated with `openssl rand -base64 32`, stored in env
-- **Password hashing:** bcrypt work factor 12
-- **Refresh token storage:** SHA-256 hash in DB (not plaintext)
-- **API key storage:** Custom model API keys stored as-is (no encryption in Phase 2 — consider for Phase 3)
-- **CORS:** Only `http://localhost:3000` for dev; production uses Next.js API proxy
-- **Rate limiting:** Login endpoint — 10 attempts/min per IP
-- **Audit logging:** All auth events logged (success, failure, logout, token refresh)
-
----
-
-## 8. Open Questions
-
-| # | Question | Recommendation |
-|---|----------|----------------|
-| 1 | Analytics caching? | Redis cache, 1-min TTL for dashboard overview |
-| 2 | Custom model API key encryption? | Not in Phase 2 — plaintext OK for MVP |
-| 3 | First super_admin creation? | Seed script only (`create_admin_user.py`) |
-| 4 | Audit log table (`admin_audit_log`)? | Defer to Phase 3 — log to existing structured logs for now |
-| 5 | Real-time monitoring (WebSocket)? | Defer — polling `/admin/monitoring/metrics` sufficient for Phase 2 |
-
----
-
-## 9. File Changes Summary
-
-### Backend (Phase 2 additions)
+## 9. File Structure Changes
 
 ```
 app/
 ├── api/
-│   ├── routers/admin/
-│   │   ├── __init__.py
-│   │   ├── auth.py
-│   │   ├── prompts.py
-│   │   ├── conversations.py
-│   │   ├── analytics.py
-│   │   ├── playground.py
-│   │   ├── zalo_tokens.py
-│   │   └── monitoring.py
+│   ├── routers/
+│   │   ├── __init__.py           # Add admin_router
+│   │   ├── admin/
+│   │   │   ├── __init__.py
+│   │   │   ├── auth.py           # Login, logout, me
+│   │   │   ├── prompts.py        # Prompt CRUD
+│   │   │   ├── conversations.py  # Conversation management
+│   │   │   ├── analytics.py      # Analytics endpoints
+│   │   │   ├── playground.py    # LLM playground
+│   │   │   ├── zalo_tokens.py    # Zalo token management
+│   │   │   └── monitoring.py     # Health, metrics
+│   │   ├── internal.py          # Unchanged
+│   │   └── webhooks.py           # Unchanged
 │   ├── schemas/
 │   │   ├── __init__.py
-│   │   ├── admin.py
-│   │   ├── analytics.py
-│   │   └── playground.py
-│   ├── dependencies.py         # + get_current_admin_user, require_role
-│   └── main.py                 # + admin_router mount
+│   │   ├── admin.py              # Shared admin schemas
+│   │   ├── analytics.py          # Analytics response models
+│   │   └── playground.py         # Playground request/response models
+│   ├── dependencies.py           # Add session auth dependencies
+│   └── main.py                   # Add admin_router
 ├── models/
-│   ├── admin_user.py
-│   ├── admin_refresh_token.py
-│   ├── benchmark_result.py
-│   └── benchmark_item.py
-└── workers/conversation/llm.py  # Unchanged — reused by playground
-```
+│   ├── __init__.py
+│   ├── admin_user.py             # NEW
+│   ├── benchmark_result.py      # NEW
+│   └── benchmark_item.py        # NEW
+└── workers/
+    └── conversation/
+        └── llm.py               # Unchanged, reused
 
-### Frontend (new)
-
-```
-frontend/                    # New Next.js project, separate repo/dir
-├── src/app/(auth)/login/
-├── src/app/(admin)/         # Dashboard, conversations, prompts, playground, tokens, monitoring
-├── src/components/admin/
-├── src/lib/api.ts
-├── src/hooks/useAuth.ts
-└── ...
-```
-
-### Database migrations
-
-```bash
-alembic revision --autogenerate -m "Add admin tables and benchmark tables"
+docs/superpowers/specs/
+└── 2026-04-05-phase2-unified-design.md  # This file
 ```
 
 ---
 
-**Document version:** 1.0
-**Review status:** Awaiting user review
+## 10. Migration Notes
+
+### Database Migration
+
+```sql
+-- Run via Alembic
+alembic revision --autogenerate -m "Add admin tables"
+
+-- SQL for initial setup:
+CREATE TABLE admin_users (...);
+CREATE TABLE benchmark_results (...);
+CREATE TABLE benchmark_items (...);
+
+-- Add column to existing table
+ALTER TABLE messages ADD COLUMN error TEXT NULL;
+
+-- Add indexes
+CREATE INDEX ix_conversations_created_at ON conversations (created_at DESC);
+CREATE INDEX ix_messages_created_at ON messages (created_at DESC);
+CREATE INDEX ix_messages_direction_created ON messages (direction, created_at DESC);
+```
+
+### Seed Script
+
+```python
+# app/api/scripts/create_admin_user.py
+# Creates initial admin user for first-time setup
+# Usage: uv run python app/api/scripts/create_admin_user.py --username admin --password secret123
+```
+
+### Environment Variables
+
+```env
+# Admin session settings
+ADMIN_SESSION_TTL_SECONDS=86400
+
+# Existing settings used
+DATABASE_URL=<existing>
+REDIS_URL=<existing>
+```
+
+---
+
+## 11. Open Questions
+
+1. **Analytics caching:** Should analytics endpoints use Redis caching? 1-minute TTL for dashboard overview to reduce DB load?
+
+2. **Conversation replay confirmation:** Should replay require a confirmation step (e.g., "Are you sure you want to replay? This will process N messages internally")?
+
+3. **Audit logging:** Log all admin actions (who did what, when)? Consider adding `admin_audit_log` table.
