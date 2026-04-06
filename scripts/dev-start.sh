@@ -3,16 +3,17 @@
 # Usage: ./scripts/dev-start.sh [command]
 #
 # Commands:
-#   start     - Start all services and show logs
-#   stop      - Stop all services
-#   restart   - Restart all services
-#   logs      - Show logs for all services
-#   status    - Show service status
-#   migrate   - Run database migrations
-#   shell     - Open shell in running API container
-#   test      - Run tests (requires test infra running)
-#   setup     - First time setup (create .env, pull images)
-#   teardown  - Stop services and remove volumes
+#   start         - Start backend services (docker) + frontend (optional)
+#   frontend      - Start frontend dev server only
+#   stop          - Stop all services
+#   restart       - Restart all services
+#   logs          - Show logs for all services
+#   status        - Show service status
+#   migrate       - Run database migrations
+#   shell         - Open shell in running API container
+#   test          - Run tests (requires test infra running)
+#   setup         - First time setup (create .env, pull images)
+#   teardown      - Stop services and remove volumes
 
 set -e
 
@@ -73,7 +74,7 @@ case "$COMMAND" in
         ;;
 
     start)
-        log_info "Starting NeoChatPlatform services..."
+        log_info "Starting NeoChatPlatform backend services..."
 
         # Check if tmux is running
         if command -v tmux &> /dev/null && [ -n "$TMUX" ]; then
@@ -134,7 +135,22 @@ case "$COMMAND" in
             ./scripts/dev-start.sh migrate
         fi
 
-        log_success "All services started!"
+        log_success "Backend services started!"
+        log_info "To start the frontend: ./scripts/dev-start.sh frontend"
+        ;;
+
+    frontend)
+        if [ ! -d "frontend" ]; then
+            log_error "frontend directory not found. Are you in the project root?"
+            exit 1
+        fi
+        if [ ! -f "frontend/package.json" ]; then
+            log_error "frontend/package.json not found. Run 'cd frontend && npm install' first."
+            exit 1
+        fi
+        log_info "Starting frontend dev server at http://localhost:3000..."
+        log_info "API backend must be running separately (./scripts/dev-start.sh start)"
+        cd frontend && npm run dev
         ;;
 
     stop)
@@ -259,30 +275,32 @@ case "$COMMAND" in
         echo "Usage: $0 <command>"
         echo ""
         echo "Commands:"
-        echo "  setup              - First time setup (create .env, pull images)"
-        echo "  start              - Start all services with tmux multi-pane logs"
-        echo "  stop               - Stop all services"
-        echo "  restart            - Restart all services"
-        echo "  status             - Show service status"
-        echo "  logs [service]     - Show logs (all or specific service)"
-        echo "  migrate            - Run database migrations"
-        echo "  rollback           - Rollback last migration"
-        echo "  current            - Show current migration"
-        echo "  history            - Show migration history"
-        echo "  shell              - Open shell in API container"
-        echo "  psql               - Open PostgreSQL shell"
-        echo "  rabbitmq           - Show RabbitMQ management URL"
-        echo "  test               - Run all tests"
-        echo "  test-unit          - Run unit tests only"
-        echo "  test-integration    - Run integration tests only"
-        echo "  test-infra-start   - Start test infrastructure"
-        echo "  test-infra-stop    - Stop test infrastructure"
-        echo "  teardown            - Stop services and remove volumes"
+        echo "  setup                - First time setup (create .env, pull images)"
+        echo "  start                - Start backend services (docker) + show tmux logs"
+        echo "  frontend             - Start frontend dev server (Next.js, port 3000)"
+        echo "  stop                 - Stop all backend services"
+        echo "  restart              - Restart all backend services"
+        echo "  status               - Show service status"
+        echo "  logs [service]      - Show logs (all or specific service)"
+        echo "  migrate              - Run database migrations"
+        echo "  rollback             - Rollback last migration"
+        echo "  current              - Show current migration"
+        echo "  history              - Show migration history"
+        echo "  shell                - Open shell in API container"
+        echo "  psql                 - Open PostgreSQL shell"
+        echo "  rabbitmq             - Show RabbitMQ management URL"
+        echo "  test                 - Run all tests"
+        echo "  test-unit            - Run unit tests only"
+        echo "  test-integration     - Run integration tests only"
+        echo "  test-infra-start     - Start test infrastructure"
+        echo "  test-infra-stop      - Stop test infrastructure"
+        echo "  teardown             - Stop services and remove volumes"
         echo ""
         echo "Examples:"
-        echo "  $0 setup                    # First time setup"
-        echo "  $0 start                   # Start all services"
-        echo "  $0 start --with-migrate     # Start with migrations"
+        echo "  $0 setup                   # First time setup"
+        echo "  $0 start                   # Start backend services"
+        echo "  $0 start --with-migrate    # Start with migrations"
+        echo "  $0 frontend                # Start frontend dev server (Next.js)"
         echo "  $0 logs api                # Show only API logs"
         echo "  $0 migrate                 # Run migrations"
         echo "  $0 test                    # Run all tests"
