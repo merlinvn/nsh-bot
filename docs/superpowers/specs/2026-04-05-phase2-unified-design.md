@@ -113,7 +113,7 @@ Browser                              FastAPI
 ### 3.1 New Tables
 
 #### `admin_users`
-Stores the single admin account. username/password only — no roles for Phase 2.
+Stores the single admin account. No role column — single-admin scope for Phase 2.
 
 | Column | Type | Constraints |
 |--------|------|-------------|
@@ -128,8 +128,6 @@ Stores the single admin account. username/password only — no roles for Phase 2
 | `updated_at` | TIMESTAMPTZ | NOT NULL |
 
 **Indexes:** `ix_admin_users_username`
-
-> **Note:** `role` column is reserved for future use. No logic in Phase 2 depends on it.
 
 #### `benchmark_results`
 Stores playground benchmark runs.
@@ -233,10 +231,12 @@ All admin endpoints use session cookie authentication (except login and OAuth ca
   "user": {
     "username": "admin",
     "is_active": true
-  }
+  },
+  "csrf_token": "a1b2c3d4e5f6..."
 }
 ```
 *Sets `Set-Cookie: session_id=<token>; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400`*
+*The `csrf_token` is returned in the response body only — not as a cookie. The frontend stores it in React Context (memory only).*
 
 **Me Response (200 OK):**
 ```json
@@ -388,17 +388,19 @@ All admin endpoints use session cookie authentication (except login and OAuth ca
 ```
 Login:
   POST /admin/auth/login {username, password}
-  → 200 {ok: true, user: {username, is_active}}
+  → 200 {ok: true, user: {username, is_active}, csrf_token: "..."}
   → Set-Cookie: session_id=<opaque>; HttpOnly; SameSite=Lax; Max-Age=86400
+  → Frontend stores csrf_token in React Context (memory only)
 
 Authenticated requests:
   Cookie: session_id=<opaque>
-  → Backend: Redis lookup "session:<id>"
+  X-CSRF-Token: <csrf_token>   (state-changing requests only)
+  → Backend: Redis lookup "session:<id>", validate csrf_token
   → Valid? → process request
   → Invalid/expired? → 401 Unauthorized
 
 Logout:
-  POST /admin/auth/logout
+  POST /admin/auth/logout (with X-CSRF-Token header)
   → Delete Redis session key
   → Set-Cookie: session_id=; Max-Age=0
   → 200 {ok: true}
@@ -522,27 +524,152 @@ Sidebar (fixed left, collapsible to icon-only):
 
 ### 6.1 Auth: Simple cookie-backed session (Phase 2)
 - Single admin username/password — no multiple accounts, no roles
-- Opaque session ID generated server-side, stored in Redis with 24h TTL
+- Opaque session ID generated server-side, stored in Redis with 24h fixed TTL
 - httpOnly, SameSite=Lax cookie — browser JS cannot access the session ID
 - No JWT, no access tokens, no refresh tokens
 - Account lockout after 5 failed login attempts (15 min lockout)
 - Login rate limiting: 10 attempts/min per IP (via Redis sliding window)
 
-### 6.2 Conversation replay is a dry-run
+### 6.2 Session Lifecycle
+
+**TTL Policy: Fixed TTL (not sliding).** A session expires 24h after creation, regardless of activity. The session is not renewed on each request — the 24h window is fixed at login time. This is simpler to reason about and avoids unbounded session extension.
+
+**Session renewal:** On password change, all active sessions for that user are immediately revoked (all Redis session keys deleted). The user must re-login. This is the only session invalidation trigger for Phase 2.
+
+**Session expiry handling:** When an expired session cookie is presented, the backend returns `401 Unauthorized`. The frontend React Context is cleared and the user is redirected to `/login`.
+
+**Cookie max-age vs. Redis TTL:** Both are set to 86400 (24h). The cookie's `Max-Age` ensures the browser deletes the cookie at the same time the Redis session expires. If Redis TTL fires first (unlikely), the backend returns 401 on the next request regardless of cookie state.
+
+**Password change:** `POST /admin/auth/password` deletes ALL Redis sessions for the current user before setting the new password hash. A new login is required after password change.
+
+### 6.3 CSRF Protection
+
+All state-changing `/admin/*` endpoints (POST, PUT, DELETE) require a double-submit cookie CSRF token. This is necessary because:
+- The session cookie is sent automatically with every request (`credentials: 'include`)
+- State-changing operations (create/update/delete prompts, replay, etc.) must be protected against CSRF
+
+**Implementation:**
+1. On successful login, backend generates a random 32-byte CSRF token and stores it in the Redis session alongside the session data: `{"user_id": "...", "username": "admin", "csrf_token": "<32-byte-hex>"}`
+2. Backend sets a second cookie: `Set-Cookie: csrf_token=<hex>; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400`
+3. The `csrf_token` cookie uses `SameSite=Strict` (stricter than the session cookie's `SameSite=Lax`) to prevent cross-site cookie send
+4. Client must read the `csrf_token` cookie (via `document.cookie` — note: `HttpOnly` means the cookie is not accessible to JavaScript, so the CSRF token must be set **without** `HttpOnly` on the CSRF cookie only, or the token must be returned in the response body on login)
+5. For state-changing requests, the client must send the CSRF token in the `X-CSRF-Token` request header
+6. Backend validates: header token matches session-stored CSRF token
+
+**CSRF cookie configuration:**
+
+| Cookie | HttpOnly | SameSite | Purpose |
+|--------|----------|----------|---------|
+| `session_id` | Yes | Lax | Auth — sent automatically |
+| `csrf_token` | No* | Strict | CSRF protection — readable by JS, sent only on same-origin requests |
+
+*Actually, since we need JS to read the CSRF token to send it as a header, the CSRF cookie must NOT be `HttpOnly`. The `SameSite=Strict` provides CSRF protection even without `HttpOnly`.
+
+**Alternative (simpler):** Return CSRF token in the login response body instead of a cookie. The frontend stores it in React Context (memory only) and sends it as `X-CSRF-Token` header. No second cookie needed. This is the **recommended approach** for Phase 2 — simpler and avoids the `HttpOnly` conflict.
+
+**Recommended CSRF flow:**
+1. Login returns `{ok: true, user: {...}, csrf_token: "<hex>"}`
+2. Frontend stores `csrf_token` in React Context (not localStorage)
+3. Frontend sends `X-CSRF-Token: <token>` header on all state-changing requests
+4. Backend validates header matches session-stored CSRF token
+
+### 6.4 Production Deployment and CORS
+
+**Deployment model:** The FastAPI backend and Next.js frontend are deployed as separate services, potentially on different hosts or behind a reverse proxy.
+
+**CORS configuration (FastAPI):**
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://admin.example.com"],  # Production frontend origin
+    allow_credentials=True,   # Required for session cookie to work
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+**Requirements for credential-include CORS:**
+- `allow_origins` must be an explicit list (not `*`)
+- `allow_credentials=True` is required for the browser to send cookies
+- The frontend's `credentials: 'include'` in `fetch()` works only when CORS is properly configured
+
+**Development vs. Production:**
+
+| Environment | Origin | Credentials | Notes |
+|-------------|--------|-------------|-------|
+| Dev (local) | `http://localhost:3000` | Yes | Backend CORS allows localhost:3000 |
+| Staging | `https://admin-staging.example.com` | Yes | Explicit origin in CORS config |
+| Production | `https://admin.example.com` | Yes | Explicit origin, `Secure` cookie |
+
+**Cookie security in production:**
+- `Secure`: `true` — cookie only sent over HTTPS
+- `SameSite=Lax`: works for cross-site top-level navigation (e.g., from a link in an email)
+- `HttpOnly`: JavaScript cannot read the session cookie
+
+### 6.5 Conversation Replay Storage Behavior
+
+Replay outputs are stored in a **separate, isolated context** and do not pollute production data:
+
+**What's stored (replay audit log):**
+- `benchmark_results` or a dedicated `replay_results` table records: conversation_id, message_id, replay_timestamp, LLM response text, tool calls made, latency
+- These records are clearly marked as replay runs and excluded from analytics queries
+
+**What's NOT polluted:**
+- `conversations` table: no new rows created for replay runs
+- `messages` table: no new inbound/outbound messages added to production conversation history
+- `analytics` queries: replay results are filtered out by a `replay_run = true` flag or separate table
+- Zalo: no API calls made, no messages delivered
+
+**Implementation:** The replay endpoint creates a temporary processing context that calls the LLM and tools exactly like a normal conversation worker, but the resulting message is stored in a `replay_results` table with `conversation_id` and `is_replay=true`, and the outbound queue publish is suppressed (not routed to `outbound.send`).
+
+### 6.6 Benchmark Raw Results Retention
+
+`benchmark_items.raw_results` (JSONB) stores full iteration details for later analysis. Retention policy:
+
+- **Retention:** 30 days by default. Older benchmark results are archived or deleted via a background cleanup job.
+- **Archive vs. delete:** `benchmark_results.status = 'archived'` marks records for retention without deletion. `raw_results` may be purged independently after 30 days, keeping only aggregated stats (`avg_latency_ms`, `p95_latency_ms`, etc.).
+- **Manual deletion:** Users can delete individual benchmark results via the playground UI.
+- **Implementation:** A daily cron job or background task runs: `DELETE FROM benchmark_results WHERE created_at < now() - interval '30 days' AND status != 'archived'`
+
+### 6.7 Bootstrap: Initial Admin User
+
+The first admin user is created via a seed script — not through any self-registration or API.
+
+**Script:** `app/api/scripts/create_admin_user.py`
+
+```bash
+# Create initial admin user
+uv run python app/api/scripts/create_admin_user.py \
+  --username admin \
+  --password "your-secure-password-here"
+```
+
+**Behavior:**
+- Checks if admin_users table is empty; if not, exits with error (prevents duplicate bootstrap)
+- Bcrypt hashes the password (work factor 12)
+- Inserts into `admin_users` with `is_active = true`
+- Logs the creation event to structured logs
+
+**Security:**
+- The script should be run once, manually, after the database is provisioned
+- After creation, the script can be stored in `scripts/` for reference but should not be part of any automated deployment
+- The initial password should be changed immediately after first login via the admin UI password change endpoint
+
+### 6.8 Conversation replay is a dry-run
 - Replay re-processes the last message through the LLM agent pipeline
 - The resulting response is stored in DB but **NOT sent to Zalo**
 - This allows testing prompt changes against real conversation context safely
 
-### 6.3 Playground uses only configured providers
+### 6.9 Playground uses only configured providers
 - Phase 2: No custom model endpoint storage in DB
 - Anthropic: uses `ANTHROPIC_API_KEY` from env
 - OpenAI-compatible: uses `OPENAI_BASE_URL` + `OPENAI_API_KEY` from env
 
-### 6.4 Monitoring metrics is a UI endpoint
+### 6.10 Monitoring metrics is a UI endpoint
 - Returns JSON for charts/gauges in the admin UI
 - Not Prometheus format — separate endpoint if Prometheus needed later
 
-### 6.5 Backend embedded, not separate
+### 6.11 Backend embedded, not separate
 - `/admin/*` routes added to existing FastAPI app
 - Same PostgreSQL, Redis, RabbitMQ as Phase 1
 - No new service to operate
