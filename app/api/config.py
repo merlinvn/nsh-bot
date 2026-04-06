@@ -41,3 +41,29 @@ class APISettings(BaseSettings):
 
 
 api_settings = APISettings()
+
+
+class AdminSettings(BaseSettings):
+    """Settings specific to the admin control plane."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # Session
+    admin_session_ttl_seconds: int = 86400  # 24 hours
+    admin_session_id_bytes: int = 32
+
+    # Password
+    admin_bcrypt_rounds: int = 12
+
+    # Lockout
+    admin_max_login_attempts: int = 5
+    admin_lockout_minutes: int = 15
+
+    # Rate limiting
+    admin_login_rate_limit_per_minute: int = 10
+
+    # CORS
+    admin_cors_origins: str = "http://localhost:3000"
+
+
+admin_settings = AdminSettings()
