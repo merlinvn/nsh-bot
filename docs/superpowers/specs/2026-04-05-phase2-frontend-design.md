@@ -25,7 +25,7 @@
 - **Framework:** Next.js 14+ (App Router)
 - **Language:** TypeScript (strict mode)
 - **Styling:** Tailwind CSS 3.4+ + shadcn/ui components
-- **State Management:** Zustand (lightweight) + React Query (server state)
+- **State Management:** React Context (auth user state) + React Query (server state)
 - **Forms:** React Hook Form + Zod validation
 - **Charts:** Recharts or Tremor
 - **HTTP Client:** Built-in fetch with custom wrapper
@@ -96,10 +96,9 @@ frontend/
 - Analytics data
 - Any data from `/admin/*` endpoints
 
-**Client State (Zustand):**
-- Auth session (token, user info)
-- UI preferences (sidebar collapsed, theme)
-- Form draft states
+**Client State (React Context):**
+- Auth user state: `{ username: string | null, isActive: boolean }`
+- UI preferences (sidebar collapsed state only)
 
 **URL State:**
 - Filters, pagination, search params (via nuqs or Next.js searchParams)
@@ -161,46 +160,58 @@ frontend/
 
 ## 4. Auth Flow
 
-### Login Flow
+**Cookie-Based Session (Simplified)**
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Login Page  │────▶│  POST /auth  │────▶│   Redirect    │
-│  /login      │     │   login      │     │  /conversations
-└──────────────┘     └──────────────┘     └──────────────┘
-                            │
-                            ▼
-                     ┌──────────────┐
-                     │  Set Cookie  │
-                     │  httpOnly    │
-                     └──────────────┘
+┌──────────────┐     ┌──────────────────────────┐     ┌──────────────┐
+│  Login Page  │────▶│  POST /admin/auth/login  │────▶│   Redirect    │
+│  /login      │     │  { username, password }   │     │  /admin       │
+└──────────────┘     └──────────────────────────┘     └──────────────┘
+                                │
+                                ▼ (sets httpOnly cookie automatically)
+                     ┌──────────────────────────┐
+                     │  Browser stores cookie  │
+                     │  (no JS access)         │
+                     └──────────────────────────┘
+
+Subsequent requests: browser sends cookie automatically with every request
 ```
 
-### Auth Implementation
+**Frontend Auth Implementation:**
 
-**Backend (existing FastAPI):**
-- `POST /admin/auth/login` → { username, password } → returns httpOnly session cookie or JWT
-- `POST /admin/auth/logout` → clears cookie
-- `GET /admin/auth/me` → returns current user info
+- **Login:** Form posts to `POST /admin/auth/login` with `username` + `password`
+- **Session:** Browser handles cookie storage automatically (httpOnly cookie set by backend response)
+- **Session check:** `GET /admin/auth/me` returns `{ username: string, isActive: boolean }`
+- **Logout:** `POST /admin/auth/logout`, then clear React Context user state
+- **No JWT/tokens in localStorage** — cookie handled entirely by the browser
 
-**Frontend:**
-- NextAuth.js with Credentials provider (NOT OAuth)
-- Session stored in httpOnly cookie (never localStorage)
-- Middleware protects all `/admin/*` routes
-- `useAuth()` hook exposes `user`, `login()`, `logout()`
+**React Context for Auth State:**
 
-### Protected Route Flow
+```tsx
+// hooks/useAuth.ts
+interface AuthUser {
+  username: string;
+  isActive: boolean;
+}
 
+const AuthContext = createContext<{
+  user: AuthUser | null;
+  login: (username: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  isLoading: boolean;
+} | null>(null);
+
+// usage: const { user, login, logout } = useAuth();
 ```
-Request → Middleware → Check session cookie → Valid? → Yes → Render page
-                                                    │
-                                                    No → Redirect /login
-```
 
-### Session Refresh
+**Protected Routes:**
+- Next.js middleware checks session via `GET /admin/auth/me`
+- If no active session → redirect to `/login`
+- Login page checks session on mount → if active, redirect to `/admin`
 
-- Silent refresh before expiry (handled by NextAuth)
-- Force re-login after 24h inactivity
+**Session Expiry:**
+- Backend handles session expiration
+- On 401 response → clear context, redirect to `/login`
 
 ---
 
@@ -279,7 +290,7 @@ const navItems = [
 - Conversation metadata header
 - Message thread (chat bubble UI, bot vs user differentiated)
 - Tool calls panel (expandable per message)
-- Replay button (triggers `/admin/conversations/[id]/replay`)
+- Replay button (dry-run: logs/replays internally, no Zalo delivery)
 
 ### 6.3 Prompt Management
 
@@ -303,13 +314,14 @@ const navItems = [
 **Layout:**
 - Left: Prompt template editor (with variables)
 - Right: Chat interface (user/assistant messages)
-- Bottom: Model selector, temperature, max_tokens sliders
+- Bottom: Model selector (configured providers: Anthropic, OpenAI-compatible), temperature, max_tokens sliders
 - Actions: Send, Clear, Copy response
 
 **Features:**
 - Stream responses (SSE or WebSocket)
 - History of playground sessions (localStorage)
 - Save prompt to library
+- Note: Custom model API keys are NOT stored — playground uses pre-configured providers only
 
 ### 6.5 Token Management (Zalo OAuth)
 
@@ -329,7 +341,7 @@ const navItems = [
 
 **Components:**
 - Health indicators (green/yellow/red): API, Database, Redis, RabbitMQ
-- Metrics charts:
+- Metrics charts (data from `/admin/monitoring/metrics` as JSON):
   - Request rate (requests/second)
   - Error rate (5xx/4xx)
   - Queue depth
@@ -344,6 +356,7 @@ const navItems = [
 
 ```typescript
 // lib/api.ts
+// No auth tokens needed — session cookie is sent automatically by the browser
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 async function apiRequest<T>(
@@ -352,7 +365,7 @@ async function apiRequest<T>(
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
-    credentials: 'include', // Send httpOnly cookie
+    credentials: 'include', // Browser sends httpOnly session cookie automatically
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
@@ -530,7 +543,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "@tanstack/react-query": "^5.28.0",
-    "zustand": "^4.5.0",
     "react-hook-form": "^7.51.0",
     "zod": "^3.22.0",
     "@hookform/resolvers": "^3.3.0",
