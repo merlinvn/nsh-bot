@@ -9,9 +9,18 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.config import api_settings
+from app.api.config import admin_settings, api_settings
 from app.api.middleware import PIIMaskingFilter, RequestIDMiddleware, StructuredLoggingMiddleware
 from app.api.routers import auth_router, health_router, internal_router, webhooks_router
+from app.api.routers.admin import (
+    analytics_router,
+    auth_router as admin_auth_router,
+    conversations_router,
+    monitoring_router,
+    playground_router,
+    prompts_router,
+    zalo_tokens_router,
+)
 from app.core.rabbitmq import close_rabbitmq, get_rabbitmq_channel
 from app.core.redis import close_redis_client
 
@@ -50,6 +59,9 @@ async def lifespan(app: FastAPI):
 
 # Build CORS origins list
 cors_origins = [o.strip() for o in api_settings.cors_origins.split(",") if o.strip()]
+# Add admin CORS origins
+admin_cors_origins = [o.strip() for o in admin_settings.admin_cors_origins.split(",") if o.strip()]
+all_cors_origins = list(set(cors_origins + admin_cors_origins))
 
 app = FastAPI(
     title="NeoChatPlatform API",
@@ -63,7 +75,7 @@ app = FastAPI(
 # Middleware stack (applied in reverse order of declaration)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=all_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,6 +88,15 @@ app.include_router(webhooks_router)
 app.include_router(health_router)
 app.include_router(internal_router)
 app.include_router(auth_router)
+
+# Include admin routers
+app.include_router(admin_auth_router)
+app.include_router(prompts_router)
+app.include_router(conversations_router)
+app.include_router(analytics_router)
+app.include_router(playground_router)
+app.include_router(zalo_tokens_router)
+app.include_router(monitoring_router)
 
 
 # ---------- Exception handlers ----------
