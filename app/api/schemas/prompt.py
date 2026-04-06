@@ -31,3 +31,22 @@ class PromptActivateRequest(BaseModel):
     """Request to activate a specific prompt version."""
     name: str = Field(..., description="Prompt name")
     version: str = Field(..., description="Version string to activate (e.g., 'v2.0')")
+
+
+class PromptCreate(BaseModel):
+    """Request to create a new prompt."""
+    name: str
+    description: str | None = None
+    template: str
+
+
+class PromptUpdate(BaseModel):
+    """Request to update a prompt template (creates new version)."""
+    template: str
+    description: str | None = None
+
+
+class VersionCreate(BaseModel):
+    """Request to create or activate a specific version."""
+    version: int
+    template: str | None = None

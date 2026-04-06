@@ -21,6 +21,7 @@ class Message(Base, UUIDMixin, TimestampMixin):
     token_usage: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     message_id: Mapped[str] = mapped_column(String(128), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     conversation: Mapped["Conversation"] = relationship(
         "Conversation", back_populates="messages"
