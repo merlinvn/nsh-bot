@@ -1,0 +1,238 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type {
+  Conversation,
+  Message,
+  AnalyticsOverview,
+  Prompt,
+  ZaloTokenStatus,
+  MonitoringHealth,
+  MonitoringMetrics,
+  PlaygroundModels,
+  BenchmarkResult,
+  BenchmarkItem,
+} from "@/types/api";
+
+// Conversations
+export function useConversations(params?: Record<string, string>) {
+  const queryStr = params ? "?" + new URLSearchParams(params).toString() : "";
+  return useQuery<{ items: Conversation[]; total: number; page: number }>({
+    queryKey: ["conversations", params],
+    queryFn: () => api.get("/admin/conversations" + queryStr),
+    refetchInterval: 30000,
+  });
+}
+
+export function useConversation(id: string) {
+  return useQuery<Conversation & { messages: Message[] }>({
+    queryKey: ["conversation", id],
+    queryFn: () => api.get(`/admin/conversations/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useConversationStats() {
+  return useQuery<{ total: number; active: number }>({
+    queryKey: ["conversation-stats"],
+    queryFn: () => api.get("/admin/conversations/stats"),
+    refetchInterval: 30000,
+  });
+}
+
+// Analytics
+export function useAnalyticsOverview(start: string, end: string) {
+  return useQuery<AnalyticsOverview>({
+    queryKey: ["analytics", "overview", start, end],
+    queryFn: () => api.get(`/admin/analytics/overview?start=${start}&end=${end}`),
+    refetchInterval: 30000,
+  });
+}
+
+export function useMessageVolume(start: string, end: string, interval = "day") {
+  return useQuery<{ buckets: { date: string; count: number }[] }>({
+    queryKey: ["analytics", "messages", start, end, interval],
+    queryFn: () => api.get(`/admin/analytics/messages?start=${start}&end=${end}&interval=${interval}`),
+    refetchInterval: 60000,
+  });
+}
+
+export function useLatencyPercentiles(start: string, end: string) {
+  return useQuery<{ p50: number | null; p95: number | null; p99: number | null }>({
+    queryKey: ["analytics", "latency", start, end],
+    queryFn: () => api.get(`/admin/analytics/latency?start=${start}&end=${end}`),
+    refetchInterval: 60000,
+  });
+}
+
+export function useToolUsage(start: string, end: string) {
+  return useQuery<{ tools: { name: string; count: number }[] }>({
+    queryKey: ["analytics", "tools", start, end],
+    queryFn: () => api.get(`/admin/analytics/tools?start=${start}&end=${end}`),
+    refetchInterval: 60000,
+  });
+}
+
+export function useFallbackRates(start: string, end: string) {
+  return useQuery<{ total: number; errors: number; rate: number }>({
+    queryKey: ["analytics", "fallbacks", start, end],
+    queryFn: () => api.get(`/admin/analytics/fallbacks?start=${start}&end=${end}`),
+    refetchInterval: 60000,
+  });
+}
+
+export function useTokenUsage(start: string, end: string) {
+  return useQuery<{ total_input_tokens: number; total_output_tokens: number; message_count: number }>({
+    queryKey: ["analytics", "tokens", start, end],
+    queryFn: () => api.get(`/admin/analytics/tokens?start=${start}&end=${end}`),
+    refetchInterval: 60000,
+  });
+}
+
+// Prompts
+export function usePrompts() {
+  return useQuery<Prompt[]>({
+    queryKey: ["prompts"],
+    queryFn: () => api.get<Prompt[]>("/admin/prompts"),
+    refetchInterval: 60000,
+  });
+}
+
+export function usePrompt(name: string) {
+  return useQuery<Prompt & { versions?: { version: number; created_at: string }[] }>({
+    queryKey: ["prompt", name],
+    queryFn: () => api.get(`/admin/prompts/${name}`),
+    enabled: !!name,
+  });
+}
+
+export function useCreatePrompt() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; description?: string; template: string }) =>
+      api.post("/admin/prompts", body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["prompts"] }),
+  });
+}
+
+export function useUpdatePrompt(name: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { template: string; description?: string }) =>
+      api.put(`/admin/prompts/${name}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prompts"] });
+      queryClient.invalidateQueries({ queryKey: ["prompt", name] });
+    },
+  });
+}
+
+export function useDeletePrompt() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => api.delete(`/admin/prompts/${name}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["prompts"] }),
+  });
+}
+
+export function useActivatePromptVersion(name: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (version: number) => api.post(`/admin/prompts/${name}/activate`, { version }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prompts"] });
+      queryClient.invalidateQueries({ queryKey: ["prompt", name] });
+    },
+  });
+}
+
+// Playground
+export function usePlaygroundModels() {
+  return useQuery<PlaygroundModels>({
+    queryKey: ["playground-models"],
+    queryFn: () => api.get("/admin/playground/models"),
+    refetchInterval: 300000,
+  });
+}
+
+export function usePlaygroundComplete() {
+  return useMutation({
+    mutationFn: (body: {
+      model_provider: string;
+      model_name: string;
+      system_prompt: string;
+      messages: { role: string; content: string }[];
+      temperature?: number;
+      max_tokens?: number;
+    }) => api.post<{ content: string; usage?: unknown; latency_ms?: number }>("/admin/playground/complete", body),
+  });
+}
+
+export function useRunBenchmark() {
+  return useMutation({
+    mutationFn: (body: {
+      name: string;
+      test_prompts: { name: string; messages: { role: string; content: string }[] }[];
+      models: { provider: string; name: string }[];
+      iterations: number;
+    }) => api.post<BenchmarkResult>("/admin/playground/benchmark", body),
+  });
+}
+
+export function useBenchmark(id: string) {
+  return useQuery<BenchmarkResult>({
+    queryKey: ["benchmark", id],
+    queryFn: () => api.get(`/admin/playground/benchmark/${id}`),
+    enabled: !!id,
+    refetchInterval: 5000,
+  });
+}
+
+export function useBenchmarkResults(id: string) {
+  return useQuery<BenchmarkItem[]>({
+    queryKey: ["benchmark-results", id],
+    queryFn: () => api.get(`/admin/playground/benchmark/${id}/results`),
+    enabled: !!id,
+  });
+}
+
+// Tokens
+export function useZaloTokenStatus() {
+  return useQuery<ZaloTokenStatus>({
+    queryKey: ["zalo-token-status"],
+    queryFn: () => api.get("/admin/zalo-tokens/status"),
+    refetchInterval: 30000,
+  });
+}
+
+export function useRefreshToken() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post("/admin/zalo-tokens/refresh"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["zalo-token-status"] }),
+  });
+}
+
+export function useRevokeToken() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete("/admin/zalo-tokens"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["zalo-token-status"] }),
+  });
+}
+
+// Monitoring
+export function useMonitoringHealth() {
+  return useQuery<MonitoringHealth>({
+    queryKey: ["monitoring-health"],
+    queryFn: () => api.get("/admin/monitoring/health"),
+    refetchInterval: 10000,
+  });
+}
+
+export function useMonitoringMetrics() {
+  return useQuery<MonitoringMetrics>({
+    queryKey: ["monitoring-metrics"],
+    queryFn: () => api.get("/admin/monitoring/metrics"),
+    refetchInterval: 30000,
+  });
+}
