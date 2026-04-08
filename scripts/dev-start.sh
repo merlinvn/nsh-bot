@@ -225,6 +225,13 @@ case "$COMMAND" in
         $COMPOSE exec postgres psql -U neochat -d neochat
         ;;
 
+    admin-password)
+        log_info "Updating admin user password..."
+        shift
+        $COMPOSE exec -T api uv run python app/api/scripts/create_admin_user.py --username admin --password "$1" --update
+        log_success "Admin password updated."
+        ;;
+
     rabbitmq)
         log_info "Opening RabbitMQ management UI..."
         echo "URL: http://localhost:15672"
@@ -298,6 +305,7 @@ case "$COMMAND" in
         echo "  history              - Show migration history"
         echo "  shell                - Open shell in API container"
         echo "  psql                 - Open PostgreSQL shell"
+        echo "  admin-password <pw>  - Set admin user password"
         echo "  rabbitmq             - Show RabbitMQ management URL"
         echo "  test                 - Run all tests"
         echo "  test-unit            - Run unit tests only"
