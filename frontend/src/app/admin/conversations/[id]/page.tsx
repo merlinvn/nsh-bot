@@ -7,7 +7,50 @@ import { Button } from "@/components/ui/button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, CheckCircle, XCircle, Clock, Wrench } from "lucide-react";
+
+function ToolCallRow({ tc }: { tc: { tool_name: string; input: Record<string, unknown>; output: Record<string, unknown>; success: boolean; error: string | null; latency_ms: number; created_at: string } }) {
+  return (
+    <div className="pl-4 border-l-2 border-gray-200 my-2">
+      <div className="flex items-center gap-2">
+        <Wrench className="size-3 text-gray-400" />
+        <span className="font-medium text-sm">{tc.tool_name}</span>
+        {tc.success ? (
+          <CheckCircle className="size-3 text-green-500" />
+        ) : (
+          <XCircle className="size-3 text-red-500" />
+        )}
+        <span className="text-xs text-gray-400">{tc.latency_ms}ms</span>
+      </div>
+      {tc.error && (
+        <div className="mt-1 text-xs text-red-600 bg-red-50 border border-red-200 rounded p-1.5">{tc.error}</div>
+      )}
+    </div>
+  );
+}
+
+function DeliveryAttemptRow({ da }: { da: { attempt_no: number; status: string; response: Record<string, unknown> | null; error: string | null; created_at: string } }) {
+  return (
+    <div className="pl-4 border-l-2 border-orange-200 my-2">
+      <div className="flex items-center gap-2">
+        {da.status === "delivered" ? (
+          <CheckCircle className="size-3 text-green-500" />
+        ) : da.status === "failed" ? (
+          <XCircle className="size-3 text-red-500" />
+        ) : (
+          <Clock className="size-3 text-yellow-500" />
+        )}
+        <span className="text-sm font-medium">Attempt {da.attempt_no}</span>
+        <Badge variant={da.status === "delivered" ? "default" : da.status === "failed" ? "destructive" : "secondary"} className="text-xs">
+          {da.status}
+        </Badge>
+        {da.error && (
+          <span className="text-xs text-red-600">{da.error}</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function ConversationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
@@ -72,24 +115,48 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
           data.messages.map((msg) => (
             <Card key={msg.id}>
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm">
+                <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
                   <Badge variant={msg.direction === "inbound" ? "default" : "secondary"}>
                     {msg.direction}
                   </Badge>
                   {msg.model && <span className="text-gray-400 text-xs">{msg.model}</span>}
+                  {msg.prompt_version && <span className="text-gray-400 text-xs">v{msg.prompt_version}</span>}
                   {msg.latency_ms && (
                     <span className="text-gray-400 text-xs">{Math.round(msg.latency_ms)}ms</span>
+                  )}
+                  {msg.token_usage && (
+                    <span className="text-gray-400 text-xs">
+                      {msg.token_usage.input_tokens + msg.token_usage.output_tokens}tokens
+                    </span>
                   )}
                   <span className="ml-auto text-xs text-gray-400">
                     {new Date(msg.created_at).toLocaleString()}
                   </span>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 <p className="whitespace-pre-wrap text-sm">{msg.text}</p>
                 {msg.error && (
-                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-600">
+                  <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-600">
                     Error: {msg.error}
+                  </div>
+                )}
+
+                {msg.tool_calls.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1">TOOL CALLS</p>
+                    {msg.tool_calls.map((tc) => (
+                      <ToolCallRow key={tc.id} tc={tc} />
+                    ))}
+                  </div>
+                )}
+
+                {msg.delivery_attempts.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1">DELIVERY</p>
+                    {msg.delivery_attempts.map((da) => (
+                      <DeliveryAttemptRow key={da.id} da={da} />
+                    ))}
                   </div>
                 )}
               </CardContent>

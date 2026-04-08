@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_admin_user, get_db
 from app.models.admin_user import AdminUser
+from app.models.delivery_attempt import DeliveryAttempt
+from app.models.tool_call import ToolCall
 from app.models.conversation import Conversation
 from app.models.message import Message
 
@@ -91,6 +93,44 @@ async def get_conversation(
     )
     messages = messages_result.scalars().all()
 
+    # Fetch tool_calls and delivery_attempts for all messages in one query
+    message_ids = [str(m.id) for m in messages]
+
+    tool_calls_result = await db.execute(
+        select(ToolCall).where(ToolCall.message_id.in_(message_ids)).order_by(ToolCall.created_at)
+    )
+    tool_calls = tool_calls_result.scalars().all()
+
+    delivery_result = await db.execute(
+        select(DeliveryAttempt).where(DeliveryAttempt.message_id.in_(message_ids)).order_by(DeliveryAttempt.attempt_no)
+    )
+    delivery_attempts = delivery_result.scalars().all()
+
+    # Index by message_id for fast lookup
+    tool_calls_by_msg = {}
+    for tc in tool_calls:
+        tool_calls_by_msg.setdefault(str(tc.message_id), []).append({
+            "id": str(tc.id),
+            "tool_name": tc.tool_name,
+            "input": tc.input,
+            "output": tc.output,
+            "success": tc.success,
+            "error": tc.error,
+            "latency_ms": tc.latency_ms,
+            "created_at": tc.created_at.isoformat(),
+        })
+
+    delivery_by_msg = {}
+    for da in delivery_attempts:
+        delivery_by_msg.setdefault(str(da.message_id), []).append({
+            "id": str(da.id),
+            "attempt_no": da.attempt_no,
+            "status": da.status,
+            "response": da.response,
+            "error": da.error,
+            "created_at": da.created_at.isoformat(),
+        })
+
     return {
         "id": str(conv.id),
         "external_user_id": conv.external_user_id,
@@ -104,7 +144,11 @@ async def get_conversation(
                 "error": m.error,
                 "model": m.model,
                 "latency_ms": m.latency_ms,
+                "prompt_version": m.prompt_version,
+                "token_usage": m.token_usage,
                 "created_at": m.created_at.isoformat(),
+                "tool_calls": tool_calls_by_msg.get(str(m.id), []),
+                "delivery_attempts": delivery_by_msg.get(str(m.id), []),
             }
             for m in messages
         ],

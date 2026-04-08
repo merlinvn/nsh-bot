@@ -23,6 +23,30 @@ export interface Message {
   error: string | null;
   model: string | null;
   latency_ms: number | null;
+  prompt_version: string | null;
+  token_usage: Record<string, number> | null;
+  created_at: string;
+  tool_calls: ToolCall[];
+  delivery_attempts: DeliveryAttempt[];
+}
+
+export interface ToolCall {
+  id: string;
+  tool_name: string;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  success: boolean;
+  error: string | null;
+  latency_ms: number;
+  created_at: string;
+}
+
+export interface DeliveryAttempt {
+  id: string;
+  attempt_no: number;
+  status: string;
+  response: Record<string, unknown> | null;
+  error: string | null;
   created_at: string;
 }
 
