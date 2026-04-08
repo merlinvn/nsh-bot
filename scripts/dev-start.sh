@@ -7,6 +7,7 @@
 #   frontend      - Start frontend dev server only
 #   stop          - Stop all services
 #   restart       - Restart all services
+#   rebuild       - Rebuild images and restart all services
 #   logs          - Show logs for all services
 #   status        - Show service status
 #   migrate       - Run database migrations
@@ -165,6 +166,14 @@ case "$COMMAND" in
         log_success "Services restarted."
         ;;
 
+    rebuild)
+        log_info "Rebuilding and restarting all services..."
+        $COMPOSE down
+        $COMPOSE up -d --build
+        log_success "Rebuild complete."
+        $COMPOSE ps
+        ;;
+
     status)
         log_info "Service status:"
         $COMPOSE ps
@@ -280,6 +289,7 @@ case "$COMMAND" in
         echo "  frontend             - Start frontend dev server (Next.js, port 3000)"
         echo "  stop                 - Stop all backend services"
         echo "  restart              - Restart all backend services"
+        echo "  rebuild              - Rebuild images and restart services"
         echo "  status               - Show service status"
         echo "  logs [service]      - Show logs (all or specific service)"
         echo "  migrate              - Run database migrations"
