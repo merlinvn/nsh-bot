@@ -83,9 +83,8 @@ export interface BenchmarkResult {
 }
 
 export interface PkceResponse {
-  code_verifier: string | null;
-  state?: string;
   oauth_url: string | null;
+  callback_url?: string;
   error?: string;
 }
 
