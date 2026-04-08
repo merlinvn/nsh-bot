@@ -4,12 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function TokensPage() {
-  const { data, isLoading, isError } = useZaloTokenStatus();
+  const { data, isLoading, isError, refetch } = useZaloTokenStatus();
   const refreshMutation = useRefreshToken();
   const revokeMutation = useRevokeToken();
   const pkceMutation = useInitiatePkce();
+  const queryClient = useQueryClient();
 
   if (isError) {
     return (
@@ -22,7 +25,12 @@ export default function TokensPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Zalo Token Management</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Zalo Token Management</h1>
+        <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isLoading}>
+          <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
+        </Button>
+      </div>
       <Card>
         <CardHeader>
           <CardTitle>Current Token Status</CardTitle>
