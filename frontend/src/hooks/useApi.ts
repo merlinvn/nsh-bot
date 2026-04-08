@@ -215,10 +215,8 @@ export function useRefreshToken() {
 }
 
 export function useInitiatePkce() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => api.post<PkceResponse>("/admin/zalo-tokens/pkce"),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["zalo-token-status"] }),
   });
 }
 
