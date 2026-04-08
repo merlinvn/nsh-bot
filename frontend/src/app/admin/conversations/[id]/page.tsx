@@ -1,15 +1,15 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import { useConversation } from "@/hooks/useApi";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { RotateCcw, CheckCircle, XCircle, Clock, Wrench } from "lucide-react";
+import { RotateCcw, CheckCircle, XCircle, Clock, Wrench, ChevronDown, ChevronRight, ArrowDown } from "lucide-react";
+import type { Message, ToolCall, DeliveryAttempt } from "@/types/api";
 
-function ToolCallRow({ tc }: { tc: { tool_name: string; input: Record<string, unknown>; output: Record<string, unknown>; success: boolean; error: string | null; latency_ms: number; created_at: string } }) {
+function ToolCallRow({ tc }: { tc: ToolCall }) {
   return (
     <div className="pl-4 border-l-2 border-gray-200 my-2">
       <div className="flex items-center gap-2">
@@ -29,7 +29,7 @@ function ToolCallRow({ tc }: { tc: { tool_name: string; input: Record<string, un
   );
 }
 
-function DeliveryAttemptRow({ da }: { da: { attempt_no: number; status: string; response: Record<string, unknown> | null; error: string | null; created_at: string } }) {
+function DeliveryAttemptRow({ da }: { da: DeliveryAttempt }) {
   return (
     <div className="pl-4 border-l-2 border-orange-200 my-2">
       <div className="flex items-center gap-2">
@@ -52,10 +52,129 @@ function DeliveryAttemptRow({ da }: { da: { attempt_no: number; status: string; 
   );
 }
 
+function MessageRow({
+  msg,
+  isExpanded,
+  onToggle,
+}: {
+  msg: Message;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const hasDetails = msg.tool_calls.length > 0 || msg.delivery_attempts.length > 0 || !!msg.error;
+  const hasError = !!msg.error;
+
+  return (
+    <div className="border rounded-lg bg-white">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+        disabled={!hasDetails}
+      >
+        <span className="text-gray-300 shrink-0">
+          {hasDetails ? (isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />) : null}
+        </span>
+        <Badge variant={msg.direction === "inbound" ? "default" : "secondary"} className="shrink-0">
+          {msg.direction === "inbound" ? "IN" : "OUT"}
+        </Badge>
+        <span className={`flex-1 text-sm truncate ${hasError ? "text-red-600" : "text-gray-700"}`}>
+          {msg.text}
+        </span>
+        {msg.latency_ms && (
+          <span className="text-xs text-gray-400 shrink-0">{Math.round(msg.latency_ms)}ms</span>
+        )}
+        {hasError && <XCircle className="size-3 text-red-500 shrink-0" />}
+        <span className="text-xs text-gray-400 shrink-0">
+          {new Date(msg.created_at).toLocaleTimeString()}
+        </span>
+      </button>
+
+      {isExpanded && hasDetails && (
+        <div className="px-4 pb-4 border-t">
+          <p className="whitespace-pre-wrap text-sm mt-3">{msg.text}</p>
+          {msg.error && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-600">
+              Error: {msg.error}
+            </div>
+          )}
+
+          {msg.tool_calls.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-500 mt-3 mb-1">TOOL CALLS</p>
+              {msg.tool_calls.map((tc) => (
+                <ToolCallRow key={tc.id} tc={tc} />
+              ))}
+            </div>
+          )}
+
+          {msg.delivery_attempts.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-gray-500 mt-3 mb-1">DELIVERY</p>
+              {msg.delivery_attempts.map((da) => (
+                <DeliveryAttemptRow key={da.id} da={da} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isExpanded && hasDetails && (
+        <div className="px-4 pb-3 flex items-center gap-4">
+          {msg.tool_calls.length > 0 && (
+            <span className="text-xs text-gray-400 flex items-center gap-1">
+              <Wrench className="size-3" /> {msg.tool_calls.length}
+            </span>
+          )}
+          {msg.delivery_attempts.length > 0 && (
+            <span className="text-xs text-gray-400 flex items-center gap-1">
+              <Clock className="size-3" /> {msg.delivery_attempts.length}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ConversationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
   const { data, isLoading, isError } = useConversation(id);
   const queryClient = useQueryClient();
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [allExpanded, setAllExpanded] = useState(false);
+
+  const toggle = (msgId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) {
+        next.delete(msgId);
+      } else {
+        next.add(msgId);
+      }
+      return next;
+    });
+  };
+
+  const expandAll = () => {
+    if (!data) return;
+    setExpandedIds(new Set(data.messages.map((m) => m.id)));
+    setAllExpanded(true);
+  };
+
+  const collapseAll = () => {
+    setExpandedIds(new Set());
+    setAllExpanded(false);
+  };
+
+  const jumpToLatest = () => {
+    if (!data || data.messages.length === 0) return;
+    const lastId = data.messages[data.messages.length - 1].id;
+    setExpandedIds(new Set([lastId]));
+    setAllExpanded(false);
+    setTimeout(() => {
+      document.getElementById(`msg-${lastId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  };
 
   const replayMutation = useMutation({
     mutationFn: () => api.post(`/admin/conversations/${id}/replay`),
@@ -74,7 +193,7 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
         <div className="h-8 w-48 bg-gray-200 rounded animate-pulse" />
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-32 bg-gray-100 rounded animate-pulse" />
+            <div key={i} className="h-16 bg-gray-100 rounded animate-pulse" />
           ))}
         </div>
       </div>
@@ -96,71 +215,43 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Conversation {data.id.slice(0, 8)}</h1>
           <Badge>{data.status}</Badge>
+          <span className="text-sm text-gray-500">{data.messages.length} messages</span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => replayMutation.mutate()}
-          disabled={replayMutation.isPending}
-        >
-          <RotateCcw className="mr-2 h-4 w-4" />
-          {replayMutation.isPending ? "Replaying..." : "Replay Last Message"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={expandAll} className="text-xs">
+            Expand all
+          </Button>
+          <Button variant="outline" size="sm" onClick={collapseAll} className="text-xs">
+            Collapse all
+          </Button>
+          <Button variant="outline" size="sm" onClick={jumpToLatest}>
+            <ArrowDown className="mr-1 h-4 w-4" />
+            Latest
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => replayMutation.mutate()}
+            disabled={replayMutation.isPending}
+          >
+            <RotateCcw className="mr-1 h-4 w-4" />
+            {replayMutation.isPending ? "Replaying..." : "Replay"}
+          </Button>
+        </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-1">
         {data.messages.length === 0 ? (
           <div className="p-8 text-center text-gray-400">No messages in this conversation.</div>
         ) : (
           data.messages.map((msg) => (
-            <Card key={msg.id}>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge variant={msg.direction === "inbound" ? "default" : "secondary"}>
-                    {msg.direction}
-                  </Badge>
-                  {msg.model && <span className="text-gray-400 text-xs">{msg.model}</span>}
-                  {msg.prompt_version && <span className="text-gray-400 text-xs">v{msg.prompt_version}</span>}
-                  {msg.latency_ms && (
-                    <span className="text-gray-400 text-xs">{Math.round(msg.latency_ms)}ms</span>
-                  )}
-                  {msg.token_usage && (
-                    <span className="text-gray-400 text-xs">
-                      {msg.token_usage.input_tokens + msg.token_usage.output_tokens}tokens
-                    </span>
-                  )}
-                  <span className="ml-auto text-xs text-gray-400">
-                    {new Date(msg.created_at).toLocaleString()}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="whitespace-pre-wrap text-sm">{msg.text}</p>
-                {msg.error && (
-                  <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-600">
-                    Error: {msg.error}
-                  </div>
-                )}
-
-                {msg.tool_calls.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 mb-1">TOOL CALLS</p>
-                    {msg.tool_calls.map((tc) => (
-                      <ToolCallRow key={tc.id} tc={tc} />
-                    ))}
-                  </div>
-                )}
-
-                {msg.delivery_attempts.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 mb-1">DELIVERY</p>
-                    {msg.delivery_attempts.map((da) => (
-                      <DeliveryAttemptRow key={da.id} da={da} />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <div key={msg.id} id={`msg-${msg.id}`}>
+              <MessageRow
+                msg={msg}
+                isExpanded={allExpanded || expandedIds.has(msg.id)}
+                onToggle={() => toggle(msg.id)}
+              />
+            </div>
           ))
         )}
       </div>
