@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   RotateCcw, CheckCircle, XCircle, Clock, Wrench,
   ChevronDown, ChevronRight, ArrowDown, Loader2,
+  ChevronsUpDown,
 } from "lucide-react";
 import type { Message, ToolCall, DeliveryAttempt } from "@/types/api";
 
@@ -241,8 +242,14 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
           <span className="text-sm text-gray-500">{messages.length} msgs</span>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={expandAll} className="text-xs">Expand all</Button>
-          <Button variant="outline" size="sm" onClick={collapseAll} className="text-xs">Collapse all</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => allExpanded ? collapseAll() : expandAll()}
+          >
+            <ChevronsUpDown className="mr-1 h-4 w-4" />
+            {allExpanded ? "Collapse all" : "Expand all"}
+          </Button>
           <Button variant="outline" size="sm" onClick={jumpToLatest}>
             <ArrowDown className="mr-1 h-4 w-4" />Bottom
           </Button>
