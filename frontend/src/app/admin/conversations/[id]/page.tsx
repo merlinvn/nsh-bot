@@ -238,13 +238,13 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Conversation {id?.slice(0, 8)}</h1>
-          <span className="text-sm text-gray-500">{messages.length} messages</span>
+          <span className="text-sm text-gray-500">{messages.length} msgs</span>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={expandAll} className="text-xs">Expand all</Button>
           <Button variant="outline" size="sm" onClick={collapseAll} className="text-xs">Collapse all</Button>
           <Button variant="outline" size="sm" onClick={jumpToLatest}>
-            <ArrowDown className="mr-1 h-4 w-4" />Latest
+            <ArrowDown className="mr-1 h-4 w-4" />Bottom
           </Button>
           <Button
             variant="outline"
@@ -267,9 +267,9 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
             disabled={isFetching}
           >
             {isFetching ? (
-              <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Loading older...</>
+              <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Loading...</>
             ) : (
-              <>Load older messages ({messages.length} loaded)</>
+              <>Load more ({messages.length} loaded)</>
             )}
           </Button>
         </div>
