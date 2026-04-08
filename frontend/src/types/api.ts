@@ -59,6 +59,15 @@ export interface MonitoringMetrics {
   avg_latency_ms: number | null;
 }
 
+export interface MonitoringQueues {
+  queues: {
+    name: string;
+    messages: number;
+    consumers: number;
+    state: string;
+  }[];
+}
+
 export interface PlaygroundModels {
   anthropic: string[];
   "openai-compat": string[];
@@ -70,6 +79,12 @@ export interface BenchmarkResult {
   status: string;
   error: string | null;
   created_at: string;
+}
+
+export interface PkceResponse {
+  code_verifier: string;
+  code_challenge: string;
+  oauth_url: string;
 }
 
 export interface BenchmarkItem {

@@ -8,9 +8,11 @@ import type {
   ZaloTokenStatus,
   MonitoringHealth,
   MonitoringMetrics,
+  MonitoringQueues,
   PlaygroundModels,
   BenchmarkResult,
   BenchmarkItem,
+  PkceResponse,
 } from "@/types/api";
 
 // Conversations
@@ -215,7 +217,7 @@ export function useRefreshToken() {
 export function useInitiatePkce() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api.get("/auth/zalo/pkce"),
+    mutationFn: () => api.post<PkceResponse>("/admin/zalo-tokens/pkce"),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["zalo-token-status"] }),
   });
 }
@@ -242,5 +244,13 @@ export function useMonitoringMetrics() {
     queryKey: ["monitoring-metrics"],
     queryFn: () => api.get("/admin/monitoring/metrics"),
     refetchInterval: 30000,
+  });
+}
+
+export function useMonitoringQueues() {
+  return useQuery<MonitoringQueues>({
+    queryKey: ["monitoring-queues"],
+    queryFn: () => api.get("/admin/monitoring/queues"),
+    refetchInterval: 15000,
   });
 }

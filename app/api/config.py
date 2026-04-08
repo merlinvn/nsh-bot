@@ -15,6 +15,7 @@ class APISettings(BaseSettings):
 
     # RabbitMQ
     rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672/"
+    rabbitmq_management_url: str = "http://guest:guest@rabbitmq:15672"
 
     # Zalo OA
     zalo_app_id: str = ""

@@ -17,7 +17,7 @@ async def list_prompts(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Prompt).order_by(Prompt.name))
     prompts = result.scalars().all()
     return [
-        {"name": p.name, "description": None, "active_version": p.active_version} for p in prompts
+        {"name": p.name, "description": None, "active_version": int(p.active_version)} for p in prompts
     ]
 
 
@@ -46,7 +46,7 @@ async def get_prompt(name: str, db: AsyncSession = Depends(get_db)):
     prompt = result.scalar_one_or_none()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
-    return {"name": prompt.name, "description": prompt.description, "active_version": prompt.active_version}
+    return {"name": prompt.name, "description": prompt.description, "active_version": int(prompt.active_version)}
 
 
 @router.put("/{name}")
