@@ -1,4 +1,6 @@
-"""Admin Zalo token management router."""
+"""Admin Zalo token management router - OAuth token exchange."""
+import base64
+import hashlib
 import json
 import secrets
 import uuid
@@ -18,21 +20,39 @@ from app.models.zalo_token import ZaloToken
 
 router = APIRouter(prefix="/admin/zalo-tokens", tags=["admin:zalo-tokens"])
 
+ZALO_AUTH_URL = "https://oauth.zaloapp.com/v4/oa/permission"
 ZALO_TOKEN_URL = "https://oauth.zaloapp.com/v4/oa/access_token"
 ZALO_REFRESH_URL = "https://oauth.zaloapp.com/v4/oa/refresh"
 PKCE_TTL_SECONDS = 600  # 10 minutes
 
 
+def _generate_code_verifier() -> str:
+    """Generate a random code verifier for PKCE (43 characters)."""
+    return secrets.token_urlsafe(43)[:43]
+
+
+def _generate_code_challenge(code_verifier: str) -> str:
+    """Generate code challenge from code verifier using SHA-256 + Base64.
+
+    code_challenge = Base64URL(SHA256(code_verifier)) without padding.
+    This is the S256 method.
+    """
+    sha256_hash = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(sha256_hash).rstrip(b"=").decode("ascii")
+
+
 def _build_auth_url(code_verifier: str, state: str) -> str:
-    """Build the Zalo OAuth authorization URL."""
+    """Build the Zalo OAuth authorization URL with S256 PKCE."""
+    code_challenge = _generate_code_challenge(code_verifier)
     callback_url = f"{api_settings.zalo_callback_url}/admin/zalo-tokens/callback"
     params = urlencode({
         "app_id": api_settings.zalo_app_id,
         "redirect_uri": callback_url,
-        "code_challenge": code_verifier,  # Zalo uses plain challenge
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
         "state": state,
     })
-    return f"https://oauth.zaloapp.com/v4/oa/permission?{params}"
+    return f"{ZALO_AUTH_URL}?{params}"
 
 
 async def _store_pkce_state(redis_client: redis.Redis, state: str, code_verifier: str) -> None:
@@ -107,26 +127,20 @@ async def generate_pkce(
     redis_client: redis.Redis = Depends(get_redis),
     _: AdminUser = Depends(get_current_admin_user),
 ):
-    """Generate PKCE pair and authorization URL for Zalo OAuth."""
-    if not api_settings.zalo_app_id:
-        return {
-            "code_verifier": None,
-            "oauth_url": None,
-            "error": "zalo_app_id not configured",
-        }
-    if not api_settings.zalo_callback_url:
-        return {
-            "code_verifier": None,
-            "oauth_url": None,
-            "error": "zalo_callback_url not configured",
-        }
+    """Generate PKCE pair and authorization URL for Zalo OAuth.
 
-    code_verifier = secrets.token_urlsafe(64)
+    Generates a fresh code_verifier, derives the S256 code_challenge,
+    stores code_verifier in Redis, and returns the auth URL.
+    """
+    if not api_settings.zalo_app_id:
+        return {"error": "zalo_app_id not configured", "oauth_url": None, "code_verifier": None}
+    if not api_settings.zalo_callback_url:
+        return {"error": "zalo_callback_url not configured", "oauth_url": None, "code_verifier": None}
+
+    code_verifier = _generate_code_verifier()
     state = secrets.token_urlsafe(16)
 
-    # Store state -> code_verifier mapping in Redis
     await _store_pkce_state(redis_client, state, code_verifier)
-
     oauth_url = _build_auth_url(code_verifier, state)
 
     return {
@@ -138,20 +152,20 @@ async def generate_pkce(
 
 @router.get("/callback")
 async def oauth_callback(
-    request: Request,
     code: str = Query(...),
     oa_id: str = Query(...),
     state: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     redis_client: redis.Redis = Depends(get_redis),
 ):
-    """OAuth callback from Zalo. Exchanges code for access token, stores in DB, redirects to frontend."""
+    """OAuth callback from Zalo. Exchanges code for access token and stores in DB.
+
+    Zalo sends: ?code=<AUTH_CODE>&oa_id=<OA_ID>&state=<STATE>
+    """
     from fastapi.responses import RedirectResponse
 
-    # Default redirect to tokens page
     redirect_url = f"{api_settings.zalo_callback_url}/admin/tokens"
 
-    # Look up code_verifier from Redis using state
     code_verifier = None
     if state:
         code_verifier = await _get_pkce_state(redis_client, state)
@@ -184,7 +198,7 @@ async def oauth_callback(
     if expires_in:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
-    # Upsert token — delete old and insert new
+    # Upsert: delete old tokens and store new one
     await db.execute(select(ZaloToken).delete())
     new_token = ZaloToken(
         id=uuid.uuid4(),
@@ -222,7 +236,7 @@ async def refresh_token(
         return {"ok": False, "error": f"Failed to refresh token: {str(exc)}"}
 
     access_token = token_data.get("access_token")
-    refresh_token = token_data.get("refresh_token")
+    refresh_token_new = token_data.get("refresh_token")
     expires_in = token_data.get("expires_in")
 
     expires_at = None
@@ -230,8 +244,8 @@ async def refresh_token(
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
     token.access_token = access_token
-    if refresh_token:
-        token.refresh_token = refresh_token
+    if refresh_token_new:
+        token.refresh_token = refresh_token_new
     token.expires_at = expires_at
     await db.commit()
 
