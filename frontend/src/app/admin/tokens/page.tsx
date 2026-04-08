@@ -1,5 +1,6 @@
 "use client";
-import { useZaloTokenStatus, useRefreshToken, useRevokeToken } from "@/hooks/useApi";
+import { useState } from "react";
+import { useZaloTokenStatus, useRefreshToken, useRevokeToken, useInitiatePkce } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,8 @@ export default function TokensPage() {
   const { data, isLoading } = useZaloTokenStatus();
   const refreshMutation = useRefreshToken();
   const revokeMutation = useRevokeToken();
+  const pkceMutation = useInitiatePkce();
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
 
   if (isLoading) return <div>Loading...</div>;
 
@@ -29,7 +32,24 @@ export default function TokensPage() {
               </span>
             )}
           </div>
+          {authUrl && (
+            <div className="p-3 bg-gray-100 rounded text-sm break-all">
+              <p className="font-medium mb-1">Authorization URL:</p>
+              <a href={authUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
+                {authUrl}
+              </a>
+            </div>
+          )}
           <div className="flex gap-2">
+            <Button
+              onClick={async () => {
+                const result = await pkceMutation.mutateAsync();
+                setAuthUrl(result.authorization_url);
+              }}
+              disabled={pkceMutation.isPending}
+            >
+              Get Authorization URL
+            </Button>
             <Button
               onClick={() => refreshMutation.mutate()}
               disabled={refreshMutation.isPending || !data?.has_token}

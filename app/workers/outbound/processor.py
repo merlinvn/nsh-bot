@@ -74,9 +74,9 @@ async def process_outbound(message: dict) -> None:
         extra={"user_id": user_id, "message_id": message_id, "outbound_message_id": outbound_message_id},
     )
 
-    # Idempotency check: prevent double-send if same message_id is processed twice
+    # Idempotency check: prevent double-send if same outbound_message_id is processed twice
     redis_client = await get_redis_client()
-    sent_key = f"outbound:sent:{message_id}"
+    sent_key = f"outbound:sent:{outbound_message_id}"
     was_sent = await redis_client.set(sent_key, "1", nx=True, ex=86400)
     if was_sent is None:
         logger.info("Outbound already processed, skipping", extra={"message_id": message_id, "user_id": user_id})

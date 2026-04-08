@@ -8,13 +8,13 @@ from datetime import datetime, timezone
 
 import bcrypt
 
-from app.core.database import async_session_maker
+from app.core.database import async_session_context
 from app.models.admin_user import AdminUser
 
 
 async def create_admin(username: str, password: str):
     """Create an admin user."""
-    async with async_session_maker() as db:
+    async with async_session_context() as db:
         # Check if any admin exists
         from sqlalchemy import select
 

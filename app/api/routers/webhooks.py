@@ -125,27 +125,27 @@ async def zalo_webhook(
         )
         return WebhookResponse(success=True)
 
-    # 3b. Send ACK to customer immediately (only once per message_id)
-    ack_key = f"zalo:ack:{message_id}"
-    try:
-        ack_sent = await redis_client.set(ack_key, "1", nx=True, ex=86400)
-        if ack_sent:
-            await publish_message(
-                routing_key=OUTBOUND_SEND_RK,
-                body={
-                    "message_id": message_id,
-                    "external_user_id": sender_id,
-                    "text": ACK_TEXT,
-                    "conversation_id": "",
-                    "outbound_message_id": "",
-                    "attempt_no": 1,
-                },
-            )
-            logger.info("ack_published", extra={"message_id": message_id, "user_id": sender_id})
-        else:
-            logger.info("ack_already_sent_skipping", extra={"message_id": message_id})
-    except Exception as exc:
-        logger.warning("ack_publish_failed", extra={"message_id": message_id, "error": str(exc)})
+    # 3b. Send ACK to customer only when agent needs to do a long tool call
+    # ack_key = f"zalo:ack:{message_id}"
+    # try:
+    #     ack_sent = await redis_client.set(ack_key, "1", nx=True, ex=86400)
+    #     if ack_sent:
+    #         await publish_message(
+    #             routing_key=OUTBOUND_SEND_RK,
+    #             body={
+    #                 "message_id": message_id,
+    #                 "external_user_id": sender_id,
+    #                 "text": ACK_TEXT,
+    #                 "conversation_id": "",
+    #                 "outbound_message_id": "",
+    #                 "attempt_no": 1,
+    #             },
+    #         )
+    #         logger.info("ack_published", extra={"message_id": message_id, "user_id": sender_id})
+    #     else:
+    #         logger.info("ack_already_sent_skipping", extra={"message_id": message_id})
+    # except Exception as exc:
+    #     logger.warning("ack_publish_failed", extra={"message_id": message_id, "error": str(exc)})
 
     # 4. Publish to conversation.process queue
     queue_payload = {

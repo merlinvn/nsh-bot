@@ -30,7 +30,7 @@ class APISettings(BaseSettings):
 
     # API-specific
     internal_api_key: str = "changeme"
-    cors_origins: str = "*"
+    cors_origins: str = "http://localhost:3000"
     log_level: str = "INFO"
     rate_limit_per_minute: int = 100
 

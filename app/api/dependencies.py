@@ -5,7 +5,7 @@ import redis.asyncio as redis
 from fastapi import Depends, Header, HTTPException, Request, status
 
 from app.api.config import api_settings
-from app.core.database import get_async_session
+from app.core.database import AsyncSession, get_async_session
 from app.core.rabbitmq import get_rabbitmq_channel
 from app.core.redis import get_redis_client
 from app.core.session import SessionStore
@@ -43,6 +43,7 @@ async def verify_internal_api_key(
 
 async def get_current_admin_user(
     request: Request,
+    db: AsyncSession = Depends(get_async_session),
     redis_client: redis.Redis = Depends(get_redis),
 ) -> "AdminUser":
     """Validate session cookie and return the current admin user."""
@@ -64,12 +65,10 @@ async def get_current_admin_user(
         )
 
     # Load admin user from DB
-    db = await get_async_session()
-    async with db:
-        user = await db.get(AdminUser, uuid.UUID(session_data["user_id"]))
-        if user is None or not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"code": "USER_INACTIVE", "message": "User inactive or not found."},
-            )
-        return user
+    user = await db.get(AdminUser, uuid.UUID(session_data["user_id"]))
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "USER_INACTIVE", "message": "User inactive or not found."},
+        )
+    return user

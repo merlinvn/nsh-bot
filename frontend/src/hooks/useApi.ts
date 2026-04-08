@@ -212,6 +212,14 @@ export function useRefreshToken() {
   });
 }
 
+export function useInitiatePkce() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.get("/auth/zalo/pkce"),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["zalo-token-status"] }),
+  });
+}
+
 export function useRevokeToken() {
   const queryClient = useQueryClient();
   return useMutation({

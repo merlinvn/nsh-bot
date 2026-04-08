@@ -10,7 +10,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace("/admin");
+      router.replace("/admin/analytics");
     }
   }, [user, isLoading, router]);
 

@@ -109,9 +109,10 @@ class ConversationProcessor:
             async with db_session() as db:
                 # Step 1: Load or create conversation
                 conversation = await self._load_or_create_conversation(db, external_user_id)
+                conversation_id_str = str(conversation.id)
                 logger.info(
                     "conversation_loaded",
-                    extra={"correlation_id": correlation_id, "conversation_id": str(conversation.id)},
+                    extra={"correlation_id": correlation_id, "conversation_id": conversation_id_str},
                 )
 
                 # Step 2: Save inbound message to DB
