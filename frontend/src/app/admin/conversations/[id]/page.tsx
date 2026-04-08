@@ -167,7 +167,8 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
       const data = await api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
         `/admin/conversations/${id}/messages?limit=${PAGE_SIZE}&before=${encodeURIComponent(nextBefore)}`
       );
-      setMessages((prev) => [...prev, ...data.messages]);
+      // Prepend because each page is older than the previous one
+      setMessages((prev) => [...data.messages, ...prev]);
       setHasMore(data.has_more);
       setNextBefore(data.next_before);
     } finally {
@@ -200,7 +201,7 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
     setExpandedIds(new Set([lastId]));
     setAllExpanded(false);
     setTimeout(() => {
-      scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.getElementById(`msg-${lastId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 50);
   };
 
