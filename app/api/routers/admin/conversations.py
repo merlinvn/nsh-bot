@@ -76,7 +76,108 @@ async def conversation_stats(
     return {"total": total or 0, "active": active or 0}
 
 
-@router.get("/{conversation_id}")
+@router.get("/{conversation_id}/messages")
+async def get_conversation_messages(
+    conversation_id: str,
+    limit: int = 20,
+    before: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: AdminUser = Depends(get_current_admin_user),
+):
+    """Get messages for a conversation with cursor-based pagination.
+
+    Returns messages in DESC order (newest first). Use `before` to load older messages.
+    """
+    conv_result = await db.execute(select(Conversation).where(Conversation.id == conversation_id))
+    conv = conv_result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    query = select(Message).where(Message.conversation_id == conversation_id)
+
+    if before:
+        try:
+            before_dt = datetime.fromisoformat(before.replace("Z", "+00:00"))
+            query = query.where(Message.created_at < before_dt)
+        except ValueError:
+            pass
+
+    query = query.order_by(Message.created_at.desc()).limit(limit + 1)
+    messages_result = await db.execute(query)
+    messages = messages_result.scalars().all()
+
+    # Check if there are more messages
+    has_more = len(messages) > limit
+    if has_more:
+        messages = messages[:-1]  # Remove the extra one
+
+    if not messages:
+        return {
+            "messages": [],
+            "has_more": False,
+            "next_before": None,
+        }
+
+    # Last message in the list is the oldest (for next cursor)
+    oldest = messages[-1]
+    next_before = oldest.created_at.isoformat()
+
+    message_ids = [str(m.id) for m in messages]
+
+    tool_calls_result = await db.execute(
+        select(ToolCall).where(ToolCall.message_id.in_(message_ids)).order_by(ToolCall.created_at)
+    )
+    tool_calls = tool_calls_result.scalars().all()
+
+    delivery_result = await db.execute(
+        select(DeliveryAttempt).where(DeliveryAttempt.message_id.in_(message_ids)).order_by(DeliveryAttempt.attempt_no)
+    )
+    delivery_attempts = delivery_result.scalars().all()
+
+    tool_calls_by_msg: dict = {}
+    for tc in tool_calls:
+        tool_calls_by_msg.setdefault(str(tc.message_id), []).append({
+            "id": str(tc.id),
+            "tool_name": tc.tool_name,
+            "input": tc.input,
+            "output": tc.output,
+            "success": tc.success,
+            "error": tc.error,
+            "latency_ms": tc.latency_ms,
+            "created_at": tc.created_at.isoformat(),
+        })
+
+    delivery_by_msg: dict = {}
+    for da in delivery_attempts:
+        delivery_by_msg.setdefault(str(da.message_id), []).append({
+            "id": str(da.id),
+            "attempt_no": da.attempt_no,
+            "status": da.status,
+            "response": da.response,
+            "error": da.error,
+            "created_at": da.created_at.isoformat(),
+        })
+
+    return {
+        "messages": [
+            {
+                "id": str(m.id),
+                "direction": m.direction,
+                "text": m.text,
+                "error": m.error,
+                "model": m.model,
+                "latency_ms": m.latency_ms,
+                "prompt_version": m.prompt_version,
+                "token_usage": m.token_usage,
+                "created_at": m.created_at.isoformat(),
+                "tool_calls": tool_calls_by_msg.get(str(m.id), []),
+                "delivery_attempts": delivery_by_msg.get(str(m.id), []),
+            }
+            for m in reversed(messages)  # oldest first for prepend
+        ],
+        "has_more": has_more,
+        "next_before": next_before,
+    }
 async def get_conversation(
     conversation_id: str,
     db: AsyncSession = Depends(get_db),

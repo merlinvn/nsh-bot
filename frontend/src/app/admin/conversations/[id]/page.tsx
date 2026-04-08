@@ -1,12 +1,15 @@
 "use client";
-import React, { useState } from "react";
-import { useConversation } from "@/hooks/useApi";
+import React, { useRef, useState, useCallback } from "react";
+import { useConversationMessages } from "@/hooks/useApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { RotateCcw, CheckCircle, XCircle, Clock, Wrench, ChevronDown, ChevronRight, ArrowDown } from "lucide-react";
+import {
+  RotateCcw, CheckCircle, XCircle, Clock, Wrench,
+  ChevronDown, ChevronRight, ArrowDown, Loader2,
+} from "lucide-react";
 import type { Message, ToolCall, DeliveryAttempt } from "@/types/api";
 
 function ToolCallRow({ tc }: { tc: ToolCall }) {
@@ -15,11 +18,9 @@ function ToolCallRow({ tc }: { tc: ToolCall }) {
       <div className="flex items-center gap-2">
         <Wrench className="size-3 text-gray-400" />
         <span className="font-medium text-sm">{tc.tool_name}</span>
-        {tc.success ? (
-          <CheckCircle className="size-3 text-green-500" />
-        ) : (
-          <XCircle className="size-3 text-red-500" />
-        )}
+        {tc.success
+          ? <CheckCircle className="size-3 text-green-500" />
+          : <XCircle className="size-3 text-red-500" />}
         <span className="text-xs text-gray-400">{tc.latency_ms}ms</span>
       </div>
       {tc.error && (
@@ -33,20 +34,19 @@ function DeliveryAttemptRow({ da }: { da: DeliveryAttempt }) {
   return (
     <div className="pl-4 border-l-2 border-orange-200 my-2">
       <div className="flex items-center gap-2">
-        {da.status === "delivered" ? (
-          <CheckCircle className="size-3 text-green-500" />
-        ) : da.status === "failed" ? (
-          <XCircle className="size-3 text-red-500" />
-        ) : (
-          <Clock className="size-3 text-yellow-500" />
-        )}
+        {da.status === "delivered"
+          ? <CheckCircle className="size-3 text-green-500" />
+          : da.status === "failed"
+          ? <XCircle className="size-3 text-red-500" />
+          : <Clock className="size-3 text-yellow-500" />}
         <span className="text-sm font-medium">Attempt {da.attempt_no}</span>
-        <Badge variant={da.status === "delivered" ? "default" : da.status === "failed" ? "destructive" : "secondary"} className="text-xs">
+        <Badge
+          variant={da.status === "delivered" ? "default" : da.status === "failed" ? "destructive" : "secondary"}
+          className="text-xs"
+        >
           {da.status}
         </Badge>
-        {da.error && (
-          <span className="text-xs text-red-600">{da.error}</span>
-        )}
+        {da.error && <span className="text-xs text-red-600">{da.error}</span>}
       </div>
     </div>
   );
@@ -101,18 +101,14 @@ function MessageRow({
           {msg.tool_calls.length > 0 && (
             <div>
               <p className="text-xs font-medium text-gray-500 mt-3 mb-1">TOOL CALLS</p>
-              {msg.tool_calls.map((tc) => (
-                <ToolCallRow key={tc.id} tc={tc} />
-              ))}
+              {msg.tool_calls.map((tc) => <ToolCallRow key={tc.id} tc={tc} />)}
             </div>
           )}
 
           {msg.delivery_attempts.length > 0 && (
             <div>
               <p className="text-xs font-medium text-gray-500 mt-3 mb-1">DELIVERY</p>
-              {msg.delivery_attempts.map((da) => (
-                <DeliveryAttemptRow key={da.id} da={da} />
-              ))}
+              {msg.delivery_attempts.map((da) => <DeliveryAttemptRow key={da.id} da={da} />)}
             </div>
           )}
         </div>
@@ -138,26 +134,33 @@ function MessageRow({
 
 export default function ConversationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
-  const { data, isLoading, isError } = useConversation(id);
   const queryClient = useQueryClient();
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [allExpanded, setAllExpanded] = useState(false);
+
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+  } = useConversationMessages(id);
+
+  const allMessages = data?.pages.flatMap((p) => p.messages) ?? [];
 
   const toggle = (msgId: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(msgId)) {
-        next.delete(msgId);
-      } else {
-        next.add(msgId);
-      }
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
       return next;
     });
   };
 
   const expandAll = () => {
-    if (!data) return;
-    setExpandedIds(new Set(data.messages.map((m) => m.id)));
+    setExpandedIds(new Set(allMessages.map((m) => m.id)));
     setAllExpanded(true);
   };
 
@@ -167,12 +170,12 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
   };
 
   const jumpToLatest = () => {
-    if (!data || data.messages.length === 0) return;
-    const lastId = data.messages[data.messages.length - 1].id;
+    if (allMessages.length === 0) return;
+    const lastId = allMessages[allMessages.length - 1].id;
     setExpandedIds(new Set([lastId]));
     setAllExpanded(false);
     setTimeout(() => {
-      document.getElementById(`msg-${lastId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 50);
   };
 
@@ -180,7 +183,6 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
     mutationFn: () => api.post(`/admin/conversations/${id}/replay`),
     onSuccess: () => {
       toast.success("Replay queued. Check back for results.");
-      queryClient.invalidateQueries({ queryKey: ["conversation", id] });
     },
     onError: (err: unknown) => {
       toast.error(`Replay failed: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -192,19 +194,17 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
       <div className="space-y-4">
         <div className="h-8 w-48 bg-gray-200 rounded animate-pulse" />
         <div className="space-y-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-16 bg-gray-100 rounded animate-pulse" />
-          ))}
+          {[0, 1, 2].map((i) => <div key={i} className="h-16 bg-gray-100 rounded animate-pulse" />)}
         </div>
       </div>
     );
   }
 
-  if (isError || !data) {
+  if (isError) {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">Conversation</h1>
-        <div className="p-8 text-center text-red-500">Conversation not found or failed to load.</div>
+        <div className="p-8 text-center text-red-500">Failed to load conversation.</div>
       </div>
     );
   }
@@ -213,20 +213,14 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Conversation {data.id.slice(0, 8)}</h1>
-          <Badge>{data.status}</Badge>
-          <span className="text-sm text-gray-500">{data.messages.length} messages</span>
+          <h1 className="text-2xl font-bold">Conversation {id.slice(0, 8)}</h1>
+          <span className="text-sm text-gray-500">{allMessages.length} messages</span>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={expandAll} className="text-xs">
-            Expand all
-          </Button>
-          <Button variant="outline" size="sm" onClick={collapseAll} className="text-xs">
-            Collapse all
-          </Button>
+          <Button variant="outline" size="sm" onClick={expandAll} className="text-xs">Expand all</Button>
+          <Button variant="outline" size="sm" onClick={collapseAll} className="text-xs">Collapse all</Button>
           <Button variant="outline" size="sm" onClick={jumpToLatest}>
-            <ArrowDown className="mr-1 h-4 w-4" />
-            Latest
+            <ArrowDown className="mr-1 h-4 w-4" />Latest
           </Button>
           <Button
             variant="outline"
@@ -240,21 +234,38 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
         </div>
       </div>
 
+      {/* Load more at top */}
+      {hasNextPage && (
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+          >
+            {isFetchingNextPage ? (
+              <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Loading older...</>
+            ) : (
+              <>Load older messages ({allMessages.length} loaded)</>
+            )}
+          </Button>
+        </div>
+      )}
+
       <div className="space-y-1">
-        {data.messages.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">No messages in this conversation.</div>
-        ) : (
-          data.messages.map((msg) => (
-            <div key={msg.id} id={`msg-${msg.id}`}>
-              <MessageRow
-                msg={msg}
-                isExpanded={allExpanded || expandedIds.has(msg.id)}
-                onToggle={() => toggle(msg.id)}
-              />
-            </div>
-          ))
-        )}
+        {allMessages.map((msg) => (
+          <div key={msg.id} id={`msg-${msg.id}`}>
+            <MessageRow
+              msg={msg}
+              isExpanded={allExpanded || expandedIds.has(msg.id)}
+              onToggle={() => toggle(msg.id)}
+            />
+          </div>
+        ))}
       </div>
+
+      {/* Scroll anchor at bottom */}
+      <div ref={scrollAnchorRef} />
     </div>
   );
 }

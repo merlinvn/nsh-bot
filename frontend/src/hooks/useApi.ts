@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
   Conversation,
@@ -30,6 +30,21 @@ export function useConversation(id: string) {
     queryKey: ["conversation", id],
     queryFn: () => api.get(`/admin/conversations/${id}`),
     enabled: !!id,
+  });
+}
+
+export function useConversationMessages(conversationId: string, pageSize = 20) {
+  return useInfiniteQuery({
+    queryKey: ["conversation-messages", conversationId],
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) => {
+      const url = `/admin/conversations/${conversationId}/messages?limit=${pageSize}`;
+      return api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
+        pageParam ? `${url}&before=${encodeURIComponent(pageParam)}` : url
+      );
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.next_before : undefined,
   });
 }
 
