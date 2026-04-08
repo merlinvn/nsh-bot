@@ -201,6 +201,7 @@ async def zalo_callback(
             access_token=access_token,
             refresh_token=refresh_token,
             expires_at=expires_at,
+            oa_id=oa_id,
             code_verifier=None,  # Clear after use
             code_challenge=None,
         )
