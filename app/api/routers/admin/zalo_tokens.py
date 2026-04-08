@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.config import api_settings
@@ -140,6 +140,6 @@ async def revoke_token(
     _: AdminUser = Depends(get_current_admin_user),
 ):
     """Revoke Zalo tokens."""
-    await db.execute(select(ZaloToken).delete())
+    await db.execute(delete(ZaloToken))
     await db.commit()
     return {"ok": True}
