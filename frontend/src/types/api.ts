@@ -78,10 +78,40 @@ export interface MonitoringHealth {
   rabbitmq: string;
 }
 
+export interface MonitoringHealthDetail {
+  services: {
+    name: string;
+    status: "ok" | "degraded" | "error";
+    latency_ms: number | null;
+  }[];
+}
+
 export interface MonitoringMetrics {
   total_conversations: number;
   total_messages: number;
   avg_latency_ms: number | null;
+}
+
+export interface MonitoringMetricsTrend {
+  current: {
+    total_conversations: number;
+    total_messages: number;
+    avg_latency_ms: number | null;
+  };
+  previous: {
+    total_conversations: number;
+    total_messages: number;
+    avg_latency_ms: number | null;
+  };
+}
+
+export interface MonitoringWorkers {
+  workers: {
+    name: string;
+    status: "alive" | "stale" | "dead";
+    last_seen: number | null;
+    age_seconds: number | null;
+  }[];
 }
 
 export interface MonitoringQueues {

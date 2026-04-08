@@ -1,5 +1,7 @@
 """Admin monitoring router for system health and metrics."""
 import httpx
+import json
+import time
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +11,7 @@ from app.api.dependencies import get_current_admin_user, get_db, get_redis
 from app.models.admin_user import AdminUser
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.workers.shared.health import HealthStatus, check_all
 
 router = APIRouter(prefix="/admin/monitoring", tags=["admin:monitoring"])
 
@@ -51,6 +54,28 @@ async def health_check(
     }
 
 
+@router.get("/health-detail")
+async def health_detail(
+    _: AdminUser = Depends(get_current_admin_user),
+):
+    """Per-service health with latency in ms (uses check_all())."""
+    _, results = await check_all()
+    services = []
+    for r in results:
+        if r.status == HealthStatus.HEALTHY:
+            status = "ok"
+        elif r.status == HealthStatus.UNHEALTHY:
+            status = "error"
+        else:
+            status = "degraded"
+        services.append({
+            "name": r.name,
+            "status": status,
+            "latency_ms": r.latency_ms,
+        })
+    return {"services": services}
+
+
 @router.get("/metrics")
 async def metrics(
     db: AsyncSession = Depends(get_db),
@@ -70,25 +95,69 @@ async def metrics(
     }
 
 
+METRICS_PREV_KEY = "monitoring:metrics:prev"
+METRICS_PREV_TTL = 60
+
+
+@router.get("/metrics-trend")
+async def metrics_trend(
+    db: AsyncSession = Depends(get_db),
+    _: AdminUser = Depends(get_current_admin_user),
+):
+    """Current metrics + previous values from Redis for trend comparison."""
+    total_convs = await db.scalar(select(func.count(Conversation.id)))
+    total_msgs = await db.scalar(select(func.count(Message.id)))
+    avg_latency = await db.scalar(
+        select(func.avg(Message.latency_ms)).where(Message.latency_ms.isnot(None))
+    )
+
+    current = {
+        "total_conversations": total_convs or 0,
+        "total_messages": total_msgs or 0,
+        "avg_latency_ms": float(avg_latency) if avg_latency else None,
+    }
+
+    r = await get_redis_client()
+    prev_raw = await r.get(METRICS_PREV_KEY)
+    previous = json.loads(prev_raw) if prev_raw else current
+
+    # Update previous for next refresh
+    await r.set(METRICS_PREV_KEY, json.dumps(current), ex=METRICS_PREV_TTL)
+
+    return {"current": current, "previous": previous}
+
+
 @router.get("/workers")
 async def worker_status(
     _: AdminUser = Depends(get_current_admin_user),
 ):
-    """Worker status from Redis heartbeat keys."""
-    import redis.asyncio as redis
+    """Worker status from Redis heartbeat keys with age and alive/stale/dead status."""
     from app.core.redis import get_redis_client
 
     r = await get_redis_client()
     workers = []
+    now = time.time()
     async for key in r.scan_iter(match="worker:heartbeat:*"):
         data = await r.get(key)
         if data:
-            import json
             info = json.loads(data)
+            name = key.decode().replace("worker:heartbeat:", "")
+            last_seen = info.get("timestamp")
+            age_seconds = int(now - last_seen) if last_seen else None
+            if age_seconds is not None:
+                if age_seconds < 60:
+                    status = "alive"
+                elif age_seconds < 300:
+                    status = "stale"
+                else:
+                    status = "dead"
+            else:
+                status = "dead"
             workers.append({
-                "name": key.decode().replace("worker:heartbeat:", ""),
-                "status": info.get("status", "unknown"),
-                "last_seen": info.get("timestamp"),
+                "name": name,
+                "status": status,
+                "last_seen": last_seen,
+                "age_seconds": age_seconds,
             })
     return {"workers": workers}
 

@@ -7,7 +7,10 @@ import type {
   Prompt,
   ZaloTokenStatus,
   MonitoringHealth,
+  MonitoringHealthDetail,
   MonitoringMetrics,
+  MonitoringMetricsTrend,
+  MonitoringWorkers,
   MonitoringQueues,
   PlaygroundModels,
   BenchmarkResult,
@@ -245,26 +248,56 @@ export function useRevokeToken() {
 }
 
 // Monitoring
-export function useMonitoringHealth() {
+export function useMonitoringHealth(options?: { enabled?: boolean }) {
   return useQuery<MonitoringHealth>({
     queryKey: ["monitoring-health"],
     queryFn: () => api.get("/admin/monitoring/health"),
     refetchInterval: 10000,
+    ...options,
   });
 }
 
-export function useMonitoringMetrics() {
+export function useMonitoringHealthDetail(options?: { enabled?: boolean }) {
+  return useQuery<MonitoringHealthDetail>({
+    queryKey: ["monitoring-health-detail"],
+    queryFn: () => api.get("/admin/monitoring/health-detail"),
+    refetchInterval: 10000,
+    ...options,
+  });
+}
+
+export function useMonitoringMetrics(options?: { enabled?: boolean }) {
   return useQuery<MonitoringMetrics>({
     queryKey: ["monitoring-metrics"],
     queryFn: () => api.get("/admin/monitoring/metrics"),
     refetchInterval: 30000,
+    ...options,
   });
 }
 
-export function useMonitoringQueues() {
+export function useMonitoringMetricsTrend(options?: { enabled?: boolean }) {
+  return useQuery<MonitoringMetricsTrend>({
+    queryKey: ["monitoring-metrics-trend"],
+    queryFn: () => api.get("/admin/monitoring/metrics-trend"),
+    refetchInterval: 10000,
+    ...options,
+  });
+}
+
+export function useMonitoringWorkers(options?: { enabled?: boolean }) {
+  return useQuery<MonitoringWorkers>({
+    queryKey: ["monitoring-workers"],
+    queryFn: () => api.get("/admin/monitoring/workers"),
+    refetchInterval: 10000,
+    ...options,
+  });
+}
+
+export function useMonitoringQueues(options?: { enabled?: boolean }) {
   return useQuery<MonitoringQueues>({
     queryKey: ["monitoring-queues"],
     queryFn: () => api.get("/admin/monitoring/queues"),
     refetchInterval: 15000,
+    ...options,
   });
 }
