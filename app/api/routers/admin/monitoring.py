@@ -7,7 +7,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.config import api_settings
-from app.api.dependencies import get_current_admin_user, get_db, get_redis
+from app.api.dependencies import get_current_admin_user, get_db
 from app.models.admin_user import AdminUser
 from app.models.conversation import Conversation
 from app.models.message import Message
@@ -105,6 +105,8 @@ async def metrics_trend(
     _: AdminUser = Depends(get_current_admin_user),
 ):
     """Current metrics + previous values from Redis for trend comparison."""
+    from app.core.redis import get_redis_client
+
     total_convs = await db.scalar(select(func.count(Conversation.id)))
     total_msgs = await db.scalar(select(func.count(Message.id)))
     avg_latency = await db.scalar(
