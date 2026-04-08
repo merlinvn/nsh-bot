@@ -4,6 +4,7 @@ import { useZaloTokenStatus, useRefreshToken, useRevokeToken, useInitiatePkce } 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 export default function TokensPage() {
   const { data, isLoading, isError } = useZaloTokenStatus();
@@ -57,30 +58,45 @@ export default function TokensPage() {
               <div className="flex gap-2">
                 <Button
                   onClick={async () => {
-                    const result = await pkceMutation.mutateAsync();
-                    setAuthUrl(result.oauth_url);
+                    try {
+                      const result = await pkceMutation.mutateAsync();
+                      setAuthUrl(result.oauth_url);
+                      toast.success("PKCE generated. Use the URL to authorize.");
+                    } catch {
+                      toast.error("Failed to generate PKCE");
+                    }
                   }}
                   disabled={pkceMutation.isPending}
                 >
                   {pkceMutation.isPending ? "Generating..." : "Get Authorization URL"}
                 </Button>
                 <Button
-                  onClick={() => refreshMutation.mutate()}
+                  onClick={() => {
+                    refreshMutation.mutate(undefined, {
+                      onSuccess: () => toast.success("Token refreshed"),
+                      onError: () => toast.error("Failed to refresh token"),
+                    });
+                  }}
                   disabled={refreshMutation.isPending || !data?.has_token}
                 >
                   {refreshMutation.isPending ? "Refreshing..." : "Refresh Token"}
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={() => revokeMutation.mutate()}
+                  onClick={() => {
+                    revokeMutation.mutate(undefined, {
+                      onSuccess: () => {
+                        toast.success("Token revoked");
+                        setAuthUrl(null);
+                      },
+                      onError: () => toast.error("Failed to revoke token"),
+                    });
+                  }}
                   disabled={revokeMutation.isPending || !data?.has_token}
                 >
                   {revokeMutation.isPending ? "Revoking..." : "Revoke Token"}
                 </Button>
               </div>
-              {(refreshMutation.isError || revokeMutation.isError) && (
-                <p className="text-sm text-red-500">Operation failed. Please try again.</p>
-              )}
             </>
           )}
         </CardContent>

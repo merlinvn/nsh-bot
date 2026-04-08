@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 export default function PlaygroundPage() {
   const [provider, setProvider] = useState("anthropic");
@@ -55,7 +56,9 @@ export default function PlaygroundPage() {
       });
       setResponse(result.content);
     } catch (err: unknown) {
-      setResponse(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setResponse(`Error: ${msg}`);
+      toast.error(msg);
     } finally {
       setIsLoading(false);
     }
@@ -63,20 +66,25 @@ export default function PlaygroundPage() {
 
   const handleRunBenchmark = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = await runBenchmarkMutation.mutateAsync({
-      name: benchmarkName,
-      test_prompts: [
-        { name: "greeting", messages: [{ role: "user", content: "Say hello briefly" }] },
-        { name: "question", messages: [{ role: "user", content: "What is 2+2?" }] },
-      ],
-      models: [
-        { provider: "anthropic", name: "claude-sonnet-4-20250514" },
-        { provider: "openai-compat", name: "llama3.2" },
-      ],
-      iterations: benchmarkIterations,
-    });
-    setBenchmarkBenchmarkId(result.id);
-    queryClient.invalidateQueries({ queryKey: ["benchmark", result.id] });
+    try {
+      const result = await runBenchmarkMutation.mutateAsync({
+        name: benchmarkName,
+        test_prompts: [
+          { name: "greeting", messages: [{ role: "user", content: "Say hello briefly" }] },
+          { name: "question", messages: [{ role: "user", content: "What is 2+2?" }] },
+        ],
+        models: [
+          { provider: "anthropic", name: "claude-sonnet-4-20250514" },
+          { provider: "openai-compat", name: "llama3.2" },
+        ],
+        iterations: benchmarkIterations,
+      });
+      setBenchmarkBenchmarkId(result.id);
+      queryClient.invalidateQueries({ queryKey: ["benchmark", result.id] });
+      toast.success("Benchmark started");
+    } catch {
+      toast.error("Failed to start benchmark");
+    }
   };
 
   const handleClearBenchmark = () => {

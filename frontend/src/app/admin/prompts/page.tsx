@@ -15,6 +15,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import Link from "next/link";
+import { toast } from "sonner";
 
 export default function PromptsPage() {
   const { data, isLoading } = usePrompts();
@@ -27,15 +28,20 @@ export default function PromptsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !newTemplate.trim()) return;
-    await createMutation.mutateAsync({
-      name: newName.trim(),
-      description: newDescription.trim() || undefined,
-      template: newTemplate.trim(),
-    });
-    setShowCreate(false);
-    setNewName("");
-    setNewDescription("");
-    setNewTemplate("");
+    try {
+      await createMutation.mutateAsync({
+        name: newName.trim(),
+        description: newDescription.trim() || undefined,
+        template: newTemplate.trim(),
+      });
+      toast.success(`Prompt "${newName.trim()}" created`);
+      setShowCreate(false);
+      setNewName("");
+      setNewDescription("");
+      setNewTemplate("");
+    } catch {
+      toast.error("Failed to create prompt");
+    }
   };
 
   return (
