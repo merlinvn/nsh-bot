@@ -54,11 +54,10 @@ async def generate_pkce(
     params = urlencode({
         "app_id": api_settings.zalo_app_id,
         "redirect_uri": callback_url,
-        "state": state,
         "code_challenge": code_challenge,
-        "response_type": "code",
+        "state": state,
     })
-    oauth_url = f"https://oauth.zaloapp.com/v4/permissions?{params}"
+    oauth_url = f"https://oauth.zaloapp.com/v4/oa/permission?{params}"
 
     return {
         "code_verifier": code_verifier,
