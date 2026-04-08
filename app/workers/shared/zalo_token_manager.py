@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -26,19 +26,30 @@ class ZaloTokenManager:
         self._refresh_token: str | None = None
         self._expires_at: datetime | None = None
 
-    async def _get_or_create_token(self, session: AsyncSession) -> ZaloToken:
-        """Get existing token or create initial record.
-
-        Note: Tokens should be obtained via OAuth flow (/auth/zalo/login).
-        This method will return None if no token exists in the database.
-        """
+    async def _get_or_create_token(self, session: AsyncSession) -> ZaloToken | None:
+        """Get existing token or None if not found."""
         result = await session.execute(select(ZaloToken).limit(1))
-        token_record = result.scalar_one_or_none()
+        return result.scalar_one_or_none()
 
-        if token_record is None:
-            logger.warning("No Zalo token found in database. Please authenticate via /auth/zalo/login")
+    async def get_status(self) -> dict:
+        """Return current token status as a dict."""
+        async with db_session() as session:
+            token = await self._get_or_create_token(session)
+            if not token:
+                return {"has_token": False}
+            return {
+                "has_token": True,
+                "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+                "refreshed_at": token.updated_at.isoformat(),
+                "oa_id": token.oa_id,
+            }
 
-        return token_record
+    async def revoke(self) -> None:
+        """Delete all Zalo token records."""
+        async with db_session() as session:
+            await session.execute(delete(ZaloToken))
+            await session.commit()
+            logger.info("Zalo tokens revoked")
 
     async def _save_token(
         self,

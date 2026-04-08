@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import delete, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.config import api_settings
@@ -52,16 +52,8 @@ async def token_status(
     _: AdminUser = Depends(get_current_admin_user),
 ):
     """Current Zalo token status."""
-    result = await db.execute(select(ZaloToken).order_by(ZaloToken.created_at.desc()).limit(1))
-    token = result.scalar_one_or_none()
-    if not token:
-        return {"has_token": False}
-    return {
-        "has_token": True,
-        "expires_at": token.expires_at.isoformat() if token.expires_at else None,
-        "refreshed_at": token.updated_at.isoformat(),
-        "oa_id": token.oa_id,
-    }
+    manager = get_zalo_token_manager()
+    return await manager.get_status()
 
 
 @router.post("/pkce")
@@ -113,21 +105,14 @@ async def generate_pkce(
 
 @router.post("/refresh")
 async def refresh_token(
-    db: AsyncSession = Depends(get_db),
     _: AdminUser = Depends(get_current_admin_user),
 ):
     """Refresh Zalo access token using the stored refresh token.
 
     Uses ZaloTokenManager which handles refresh + DB persistence.
     """
-    result = await db.execute(select(ZaloToken).order_by(ZaloToken.created_at.desc()).limit(1))
-    token = result.scalar_one_or_none()
-
-    if not token or not token.refresh_token:
-        return {"ok": False, "error": "No refresh token available"}
-
+    manager = get_zalo_token_manager()
     try:
-        manager = get_zalo_token_manager()
         await manager.get_access_token(force_refresh=True)
         return {"ok": True, "message": "Token refreshed successfully"}
     except Exception as exc:
@@ -136,10 +121,9 @@ async def refresh_token(
 
 @router.delete("")
 async def revoke_token(
-    db: AsyncSession = Depends(get_db),
     _: AdminUser = Depends(get_current_admin_user),
 ):
     """Revoke Zalo tokens."""
-    await db.execute(delete(ZaloToken))
-    await db.commit()
+    manager = get_zalo_token_manager()
+    await manager.revoke()
     return {"ok": True}
