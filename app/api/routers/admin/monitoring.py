@@ -41,7 +41,7 @@ async def health_check(
         from app.core.rabbitmq import get_rabbitmq_channel
 
         ch = await get_rabbitmq_channel()
-        rabbitmq_ok = ch.is_open
+        rabbitmq_ok = ch._open and ch.connection and ch.connection.is_connected
     except Exception:
         pass
 
