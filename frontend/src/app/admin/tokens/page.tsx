@@ -22,6 +22,22 @@ export default function TokensPage() {
     );
   }
 
+  const handleGetAuthUrl = async () => {
+    try {
+      const result = await pkceMutation.mutateAsync();
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      if (result.oauth_url) {
+        setAuthUrl(result.oauth_url);
+        toast.success("Authorization URL generated");
+      }
+    } catch {
+      toast.error("Failed to generate authorization URL");
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Zalo Token Management</h1>
@@ -47,25 +63,25 @@ export default function TokensPage() {
                   </span>
                 )}
               </div>
+
               {authUrl && (
-                <div className="p-3 bg-gray-100 rounded text-sm break-all">
-                  <p className="font-medium mb-1">Authorization URL:</p>
-                  <a href={authUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
-                    {authUrl}
+                <div className="p-3 bg-gray-50 border rounded text-sm space-y-1">
+                  <p className="font-medium text-gray-700">Authorization URL:</p>
+                  <p className="text-xs break-all text-gray-500 max-h-24 overflow-y-auto">{authUrl}</p>
+                  <a
+                    href={authUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-1 text-blue-600 underline text-xs"
+                  >
+                    Open in new tab
                   </a>
                 </div>
               )}
+
               <div className="flex gap-2">
                 <Button
-                  onClick={async () => {
-                    try {
-                      const result = await pkceMutation.mutateAsync();
-                      setAuthUrl(result.oauth_url);
-                      toast.success("PKCE generated. Use the URL to authorize.");
-                    } catch {
-                      toast.error("Failed to generate PKCE");
-                    }
-                  }}
+                  onClick={handleGetAuthUrl}
                   disabled={pkceMutation.isPending}
                 >
                   {pkceMutation.isPending ? "Generating..." : "Get Authorization URL"}
