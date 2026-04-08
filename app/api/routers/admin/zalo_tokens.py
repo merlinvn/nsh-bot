@@ -6,21 +6,17 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from urllib.parse import urlencode
 
-import httpx
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.config import api_settings
-from app.api.dependencies import get_current_admin_user, get_db, get_redis
+from app.api.dependencies import get_current_admin_user, get_db
 from app.models.admin_user import AdminUser
 from app.models.zalo_token import ZaloToken
+from app.workers.shared.zalo_token_manager import get_zalo_token_manager
 
 router = APIRouter(prefix="/admin/zalo-tokens", tags=["admin:zalo-tokens"])
-
-ZALO_AUTH_URL = "https://oauth.zaloapp.com/v4/oa/permission"
-ZALO_TOKEN_URL = "https://oauth.zaloapp.com/v4/oa/access_token"
-ZALO_REFRESH_URL = "https://oauth.zaloapp.com/v4/oa/refresh"
 
 
 def _generate_code_verifier() -> str:
@@ -47,23 +43,7 @@ def _build_auth_url(code_verifier: str, callback_url: str) -> str:
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     })
-    return f"{ZALO_AUTH_URL}?{params}"
-
-
-async def _refresh_access_token(refresh_token: str) -> dict:
-    """Refresh access token via Zalo API."""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            ZALO_REFRESH_URL,
-            data={
-                "refresh_token": refresh_token,
-                "app_id": api_settings.zalo_app_id,
-                "grant_type": "refresh_token",
-            },
-            headers={"secret_key": api_settings.zalo_app_secret},
-        )
-        resp.raise_for_status()
-        return resp.json()
+    return f"https://oauth.zaloapp.com/v4/oa/permission?{params}"
 
 
 @router.get("/status")
@@ -136,7 +116,10 @@ async def refresh_token(
     db: AsyncSession = Depends(get_db),
     _: AdminUser = Depends(get_current_admin_user),
 ):
-    """Refresh Zalo access token using the stored refresh token."""
+    """Refresh Zalo access token using the stored refresh token.
+
+    Uses ZaloTokenManager which handles refresh + DB persistence.
+    """
     result = await db.execute(select(ZaloToken).order_by(ZaloToken.created_at.desc()).limit(1))
     token = result.scalar_one_or_none()
 
@@ -144,31 +127,11 @@ async def refresh_token(
         return {"ok": False, "error": "No refresh token available"}
 
     try:
-        token_data = await _refresh_access_token(token.refresh_token)
-    except httpx.HTTPStatusError as exc:
-        return {"ok": False, "error": f"Zalo API error: {exc.response.text}"}
+        manager = get_zalo_token_manager()
+        await manager.get_access_token(force_refresh=True)
+        return {"ok": True, "message": "Token refreshed successfully"}
     except Exception as exc:
-        return {"ok": False, "error": f"Failed to refresh token: {str(exc)}"}
-
-    access_token = token_data.get("access_token")
-    refresh_token_new = token_data.get("refresh_token")
-    expires_in = token_data.get("expires_in")
-
-    expires_at = None
-    if expires_in:
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
-
-    token.access_token = access_token
-    if refresh_token_new:
-        token.refresh_token = refresh_token_new
-    token.expires_at = expires_at
-    await db.commit()
-
-    return {
-        "ok": True,
-        "message": "Token refreshed successfully",
-        "expires_in": expires_in,
-    }
+        return {"ok": False, "error": str(exc)}
 
 
 @router.delete("")
