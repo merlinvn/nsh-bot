@@ -26,9 +26,9 @@ export default function TokensPage() {
       <h1 className="text-2xl font-bold">Zalo Token Management</h1>
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <CardTitle>Current Token Status</CardTitle>
-            <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isLoading}>
+            <Button variant="ghost" size="icon" onClick={() => refetch()} disabled={isLoading}>
               <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
             </Button>
           </div>
