@@ -120,7 +120,20 @@ export interface MonitoringQueues {
     messages: number;
     consumers: number;
     state: string;
+    publish_rate: number;
+    deliver_rate: number;
+    oldest_message_age_ms: number | null;
   }[];
+}
+
+export interface QueuePeekMessages {
+  messages: {
+    routing_key: string;
+    message_id: string;
+    timestamp: number | null;
+    payload: unknown;
+  }[];
+  error?: string;
 }
 
 export interface PlaygroundModels {

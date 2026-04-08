@@ -12,6 +12,7 @@ import type {
   MonitoringMetricsTrend,
   MonitoringWorkers,
   MonitoringQueues,
+  QueuePeekMessages,
   PlaygroundModels,
   BenchmarkResult,
   BenchmarkItem,
@@ -299,5 +300,15 @@ export function useMonitoringQueues(options?: { enabled?: boolean }) {
     queryFn: () => api.get("/admin/monitoring/queues"),
     refetchInterval: 15000,
     ...options,
+  });
+}
+
+export function useQueuePeek(vhost: string, queueName: string, count = 10) {
+  return useQuery<QueuePeekMessages>({
+    queryKey: ["queue-peek", vhost, queueName, count],
+    queryFn: () =>
+      api.get(`/admin/monitoring/queues/${encodeURIComponent(vhost)}/${encodeURIComponent(queueName)}/messages?count=${count}`),
+    enabled: !!vhost && !!queueName,
+    refetchInterval: 5000,
   });
 }

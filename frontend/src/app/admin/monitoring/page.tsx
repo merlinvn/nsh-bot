@@ -5,11 +5,13 @@ import {
   useMonitoringMetricsTrend,
   useMonitoringQueues,
   useMonitoringWorkers,
+  useQueuePeek,
 } from "@/hooks/useApi";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, RefreshCw } from "lucide-react";
+import { Pause, Play, RefreshCw, Eye, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // Thresholds from spec
 const QUEUE_WARNING = 100;
@@ -65,8 +67,53 @@ function TrendArrow({ current, previous }: { current: number | null; previous: n
   return <span className="text-green-500 ml-1">↓</span>;
 }
 
+function formatPayload(payload: unknown): string {
+  if (typeof payload === "string") return payload;
+  return JSON.stringify(payload, null, 2);
+}
+
+function QueuePeekPanel({ vhost, queueName }: { vhost: string; queueName: string }) {
+  const { data, isLoading } = useQueuePeek(vhost, queueName, 20);
+
+  if (isLoading) {
+    return <div className="text-sm text-gray-400 py-4">Loading messages...</div>;
+  }
+
+  if (data?.error) {
+    return <div className="text-sm text-red-500 py-4">Error: {data.error}</div>;
+  }
+
+  if (!data?.messages || data.messages.length === 0) {
+    return <div className="text-sm text-gray-400 py-4">Queue is empty.</div>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {data.messages.map((msg, i) => (
+        <div key={i} className="border rounded-lg p-3 bg-gray-50">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-xs font-medium text-gray-500">#{i + 1}</span>
+            {msg.message_id && (
+              <span className="text-xs font-mono text-gray-400">id: {msg.message_id.slice(0, 16)}...</span>
+            )}
+            {msg.timestamp && (
+              <span className="text-xs text-gray-400">
+                {new Date(msg.timestamp * 1000).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          <pre className="text-xs font-mono whitespace-pre-wrap break-all bg-white border rounded p-2 max-h-48 overflow-auto">
+            {formatPayload(msg.payload)}
+          </pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function MonitoringPage() {
   const [paused, setPaused] = useState(false);
+  const [peekQueue, setPeekQueue] = useState<{ vhost: string; name: string } | null>(null);
   const queryClient = useQueryClient();
 
   const { data: healthDetail } = useMonitoringHealthDetail({ enabled: !paused });
@@ -198,7 +245,11 @@ export default function MonitoringPage() {
                     <th className="py-2 pr-4 font-medium">Queue</th>
                     <th className="py-2 pr-4 font-medium text-right">Messages</th>
                     <th className="py-2 pr-4 font-medium text-right">Consumers</th>
-                    <th className="py-2 font-medium">State</th>
+                    <th className="py-2 pr-4 font-medium text-right">Publish/s</th>
+                    <th className="py-2 pr-4 font-medium text-right">Deliver/s</th>
+                    <th className="py-2 pr-4 font-medium text-right">Oldest msg</th>
+                    <th className="py-2 pr-4 font-medium">State</th>
+                    <th className="py-2 font-medium"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -211,8 +262,38 @@ export default function MonitoringPage() {
                           <QueueMessageCount count={q.messages} />
                         </span>
                       </td>
-                      <td className="py-2 pr-4 text-right">{q.consumers}</td>
+                      <td className="py-2 pr-4 text-right">
+                        {q.consumers > 0 ? (
+                          <span className="text-green-600">{q.consumers}</span>
+                        ) : (
+                          <span className="text-red-500">{q.consumers}</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4 text-right text-xs text-gray-500">{q.publish_rate}/s</td>
+                      <td className="py-2 pr-4 text-right text-xs text-gray-500">{q.deliver_rate}/s</td>
+                      <td className="py-2 pr-4 text-right text-xs">
+                        {q.oldest_message_age_ms !== null ? (
+                          <span className={q.oldest_message_age_ms > 60000 ? "text-red-500" : q.oldest_message_age_ms > 30000 ? "text-yellow-600" : "text-gray-500"}>
+                            {q.oldest_message_age_ms > 60000
+                              ? `${Math.round(q.oldest_message_age_ms / 60000)}m`
+                              : `${Math.round(q.oldest_message_age_ms / 1000)}s`}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
                       <td className="py-2 text-xs text-gray-500">{q.state}</td>
+                      <td className="py-2">
+                        {q.messages > 0 && (
+                          <button
+                            className="text-gray-400 hover:text-gray-600 p-1"
+                            title="Peek messages"
+                            onClick={() => setPeekQueue({ vhost: "/", name: q.name })}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -225,6 +306,19 @@ export default function MonitoringPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Queue peek dialog */}
+      <Dialog open={!!peekQueue} onOpenChange={(o) => !o && setPeekQueue(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="font-mono text-sm">{peekQueue?.name}</span>
+              <span className="text-xs text-gray-400 font-normal">peek (read-only)</span>
+            </DialogTitle>
+          </DialogHeader>
+          {peekQueue && <QueuePeekPanel vhost={peekQueue.vhost} queueName={peekQueue.name} />}
+        </DialogContent>
+      </Dialog>
 
       {/* Workers */}
       <Card>

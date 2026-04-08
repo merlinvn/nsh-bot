@@ -168,7 +168,7 @@ async def worker_status(
 async def queue_status(
     _: AdminUser = Depends(get_current_admin_user),
 ):
-    """Queue depths and message counts via RabbitMQ management API."""
+    """Queue depths, message age, and rates via RabbitMQ management API."""
     mgmt_url = api_settings.rabbitmq_management_url
     queues = []
     try:
@@ -176,17 +176,78 @@ async def queue_status(
             resp = await client.get(f"{mgmt_url}/api/queues")
             if resp.status_code == 200:
                 all_queues = resp.json()
-                # Filter to only neochat queues
                 for q in all_queues:
                     name = q.get("name", "")
                     if "neochat" in name or name in ("conversation.process", "outbound.send"):
+                        msgs = q.get("messages", 0)
+                        # message_stats contains rate info
+                        stats = q.get("message_stats", {}) or {}
+                        # messages_details has age distribution: [min, 25pct, median, 75pct, max] in ms
+                        age_detail = q.get("messages_details", []) or []
+                        oldest_ms = age_detail[4] if len(age_detail) >= 5 else None
+
                         queues.append({
                             "name": name,
-                            "messages": q.get("messages", 0),
+                            "messages": msgs,
                             "consumers": q.get("consumers", 0),
                             "state": q.get("state", "unknown"),
+                            # Rate: messages published per second (total, not rate per sec from stats)
+                            "publish_rate": stats.get("publish", 0),
+                            "deliver_rate": stats.get("deliver", 0),
+                            # Oldest message age in ms (None if queue is empty)
+                            "oldest_message_age_ms": oldest_ms if msgs > 0 else None,
                         })
     except Exception:
         pass
 
     return {"queues": queues}
+
+
+@router.get("/queues/{vhost}/{queue_name}/messages")
+async def queue_peek_messages(
+    vhost: str,
+    queue_name: str,
+    count: int = 10,
+    _: AdminUser = Depends(get_current_admin_user),
+):
+    """Peek at messages in a queue without consuming them.
+
+    Returns up to `count` messages (default 10, max 100).
+    Uses RabbitMQ's /api/queues/{vhost}/{name}/get endpoint with ack_requeue_false
+    (messages are discarded after being read — this is a peek, not a consume).
+    """
+    mgmt_url = api_settings.rabbitmq_management_url
+    import urllib.parse
+    vhost_encoded = urllib.parse.quote(vhost, safe="")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{mgmt_url}/api/queues/{vhost_encoded}/{queue_name}/get",
+                json={
+                    "count": min(count, 100),
+                    "ackmode": "ack_requeue_false",
+                    "encoding": "auto",
+                },
+            )
+            if resp.status_code == 404:
+                return {"messages": [], "error": "Queue not found"}
+            if resp.status_code != 200:
+                return {"messages": [], "error": f"RabbitMQ error: {resp.status_code}"}
+            raw_messages = resp.json()
+            messages = []
+            for m in raw_messages:
+                payload = m.get("payload", "")
+                try:
+                    import json as _json
+                    parsed = _json.loads(payload)
+                except Exception:
+                    parsed = {"raw": payload[:500]}
+                messages.append({
+                    "routing_key": m.get("routing_key", ""),
+                    "message_id": m.get("message_id", ""),
+                    "timestamp": m.get("timestamp"),
+                    "payload": parsed,
+                })
+            return {"messages": messages}
+    except Exception as e:
+        return {"messages": [], "error": str(e)}
