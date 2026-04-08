@@ -1,5 +1,5 @@
 "use client";
-import React, { useRef, useState, useCallback, useEffect } from "react";
+import React, { useRef, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -143,11 +143,14 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
   const [hasMore, setHasMore] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const initialized = useRef(false);
 
-  // Initial load
-  useEffect(() => {
-    if (!id) return;
+  // Initial load - only runs once per conversation
+  React.useEffect(() => {
+    if (!id || initialized.current) return;
+    initialized.current = true;
     setIsInitialLoading(true);
+
     api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
       `/admin/conversations/${id}/messages?limit=${PAGE_SIZE}`
     ).then((data) => {
