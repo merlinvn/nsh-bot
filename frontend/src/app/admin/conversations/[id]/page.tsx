@@ -246,14 +246,9 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
           <Button variant="outline" size="sm" onClick={jumpToLatest}>
             <ArrowDown className="mr-1 h-4 w-4" />Bottom
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => replayMutation.mutate()}
-            disabled={replayMutation.isPending}
-          >
+          <Button variant="outline" size="sm" disabled>
             <RotateCcw className="mr-1 h-4 w-4" />
-            {replayMutation.isPending ? "Replaying..." : "Replay"}
+            Replay (soon)
           </Button>
         </div>
       </div>
