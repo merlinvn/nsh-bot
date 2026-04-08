@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from app.core.config import get_settings
 from app.workers.outbound.consumer import OUTBOUND_QUEUE, run_consumer, shutdown_consumer
 from app.workers.shared.logging import get_logger, set_correlation_id, setup_logging
+from app.workers.shared.heartbeat import start_heartbeat_loop
 from app.workers.shared.zalo_token_manager import get_zalo_token_manager
 
 settings = get_settings()
@@ -94,6 +95,9 @@ async def main() -> None:
     # Ensure correlation ID is set for this worker run
     set_correlation_id(settings.zalo_oa_id or "outbound-worker")
 
+    # Start Redis heartbeat
+    heartbeat_task = await start_heartbeat_loop("outbound-worker")
+
     # Initialize Zalo token storage from static env var (one-time setup)
     token_manager = get_zalo_token_manager()
     await token_manager.initialize_from_static_token()
@@ -103,6 +107,11 @@ async def main() -> None:
     except asyncio.CancelledError:
         logger.info("Outbound worker cancelled")
     finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
         await _graceful_shutdown()
 
 

@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from app.workers.conversation.consumer import ConversationConsumer
 from app.workers.shared.logging import get_logger, setup_logging
+from app.workers.shared.heartbeat import start_heartbeat_loop
 from app.core.config import get_settings
 
 settings = get_settings()
@@ -87,6 +88,9 @@ async def run_consumer(shutdown_event: asyncio.Event) -> None:
 
     loop = asyncio.get_running_loop()
 
+    # Start Redis heartbeat
+    heartbeat_task = await start_heartbeat_loop("conversation-worker")
+
     # Run shutdown task in background
     shutdown_task = asyncio.create_task(_wait_for_shutdown(shutdown_event, on_shutdown))
 
@@ -96,8 +100,13 @@ async def run_consumer(shutdown_event: asyncio.Event) -> None:
         logger.info("consumer_cancelled")
     finally:
         shutdown_task.cancel()
+        heartbeat_task.cancel()
         try:
             await shutdown_task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await heartbeat_task
         except asyncio.CancelledError:
             pass
         await on_shutdown()
