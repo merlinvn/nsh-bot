@@ -25,6 +25,7 @@ class ZaloToken(Base):
     # PKCE code_verifier and code_challenge for OAuth flow
     code_verifier: Mapped[str] = mapped_column(String(128), nullable=True)
     code_challenge: Mapped[str] = mapped_column(String(128), nullable=True)
+    oa_id: Mapped[str] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

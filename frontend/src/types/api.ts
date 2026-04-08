@@ -45,6 +45,7 @@ export interface ZaloTokenStatus {
   has_token: boolean;
   expires_at: string | null;
   refreshed_at?: string;
+  oa_id?: string;
 }
 
 export interface MonitoringHealth {
@@ -83,7 +84,6 @@ export interface BenchmarkResult {
 
 export interface PkceResponse {
   code_verifier: string | null;
-  code_challenge: string | null;
   state?: string;
   oauth_url: string | null;
   error?: string;

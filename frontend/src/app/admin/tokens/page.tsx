@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useZaloTokenStatus, useRefreshToken, useRevokeToken, useInitiatePkce } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,11 +8,26 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function TokensPage() {
+  const searchParams = useSearchParams();
   const { data, isLoading, isError } = useZaloTokenStatus();
   const refreshMutation = useRefreshToken();
   const revokeMutation = useRevokeToken();
   const pkceMutation = useInitiatePkce();
   const [authUrl, setAuthUrl] = useState<string | null>(null);
+
+  // Handle OAuth callback redirect params
+  useEffect(() => {
+    const success = searchParams.get("success");
+    const error = searchParams.get("error");
+    const detail = searchParams.get("detail");
+    const expiresIn = searchParams.get("expires_in");
+
+    if (success === "1") {
+      toast.success(`Token stored successfully${expiresIn ? ` (expires in ${expiresIn}s)` : ""}`);
+    } else if (error) {
+      toast.error(`${error}${detail ? `: ${decodeURIComponent(detail)}` : ""}`);
+    }
+  }, [searchParams]);
 
   if (isError) {
     return (
@@ -31,7 +47,6 @@ export default function TokensPage() {
       }
       if (result.oauth_url) {
         setAuthUrl(result.oauth_url);
-        toast.success("Authorization URL generated");
       }
     } catch {
       toast.error("Failed to generate authorization URL");
@@ -62,28 +77,31 @@ export default function TokensPage() {
                     Expires: {new Date(data.expires_at).toLocaleString()}
                   </span>
                 )}
+                {data?.oa_id && (
+                  <span className="text-sm text-gray-400">OA: {data.oa_id}</span>
+                )}
               </div>
 
               {authUrl && (
-                <div className="p-3 bg-gray-50 border rounded text-sm space-y-1">
+                <div className="p-3 bg-gray-50 border rounded text-sm space-y-2">
                   <p className="font-medium text-gray-700">Authorization URL:</p>
-                  <p className="text-xs break-all text-gray-500 max-h-24 overflow-y-auto">{authUrl}</p>
+                  <p className="text-xs break-all text-gray-500 max-h-24 overflow-y-auto font-mono">{authUrl}</p>
                   <a
                     href={authUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-block mt-1 text-blue-600 underline text-xs"
+                    className="inline-block text-blue-600 underline text-xs"
                   >
-                    Open in new tab
+                    Open in new tab and authorize
                   </a>
+                  <p className="text-xs text-gray-400">
+                    After authorizing, you&apos;ll be redirected back to this page.
+                  </p>
                 </div>
               )}
 
               <div className="flex gap-2">
-                <Button
-                  onClick={handleGetAuthUrl}
-                  disabled={pkceMutation.isPending}
-                >
+                <Button onClick={handleGetAuthUrl} disabled={pkceMutation.isPending}>
                   {pkceMutation.isPending ? "Generating..." : "Get Authorization URL"}
                 </Button>
                 <Button
