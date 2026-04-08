@@ -1,10 +1,9 @@
 "use client";
-import React, { useRef, useState, useCallback } from "react";
-import { useConversationMessages } from "@/hooks/useApi";
+import React, { useRef, useState, useCallback, useEffect } from "react";
+import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   RotateCcw, CheckCircle, XCircle, Clock, Wrench,
@@ -132,23 +131,46 @@ function MessageRow({
   );
 }
 
+const PAGE_SIZE = 20;
+
 export default function ConversationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params);
-  const queryClient = useQueryClient();
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [allExpanded, setAllExpanded] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
-  const {
-    data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-    isLoading,
-    isError,
-  } = useConversationMessages(id);
+  // Initial load
+  useEffect(() => {
+    if (!id) return;
+    setIsInitialLoading(true);
+    api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
+      `/admin/conversations/${id}/messages?limit=${PAGE_SIZE}`
+    ).then((data) => {
+      setMessages(data.messages);
+      setHasMore(data.has_more);
+      setNextBefore(data.next_before);
+    }).catch(() => {}).finally(() => setIsInitialLoading(false));
+  }, [id]);
 
-  const allMessages = data?.pages.flatMap((p) => p.messages) ?? [];
+  const loadMore = useCallback(async () => {
+    if (!hasMore || !nextBefore || isFetching) return;
+    setIsFetching(true);
+    try {
+      const data = await api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
+        `/admin/conversations/${id}/messages?limit=${PAGE_SIZE}&before=${encodeURIComponent(nextBefore)}`
+      );
+      setMessages((prev) => [...prev, ...data.messages]);
+      setHasMore(data.has_more);
+      setNextBefore(data.next_before);
+    } finally {
+      setIsFetching(false);
+    }
+  }, [hasMore, nextBefore, isFetching, id]);
 
   const toggle = (msgId: string) => {
     setExpandedIds((prev) => {
@@ -160,7 +182,7 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
   };
 
   const expandAll = () => {
-    setExpandedIds(new Set(allMessages.map((m) => m.id)));
+    setExpandedIds(new Set(messages.map((m) => m.id)));
     setAllExpanded(true);
   };
 
@@ -170,8 +192,8 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
   };
 
   const jumpToLatest = () => {
-    if (allMessages.length === 0) return;
-    const lastId = allMessages[allMessages.length - 1].id;
+    if (messages.length === 0) return;
+    const lastId = messages[messages.length - 1].id;
     setExpandedIds(new Set([lastId]));
     setAllExpanded(false);
     setTimeout(() => {
@@ -181,15 +203,13 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
 
   const replayMutation = useMutation({
     mutationFn: () => api.post(`/admin/conversations/${id}/replay`),
-    onSuccess: () => {
-      toast.success("Replay queued. Check back for results.");
-    },
+    onSuccess: () => toast.success("Replay queued. Check back for results."),
     onError: (err: unknown) => {
       toast.error(`Replay failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     },
   });
 
-  if (isLoading) {
+  if (isInitialLoading) {
     return (
       <div className="space-y-4">
         <div className="h-8 w-48 bg-gray-200 rounded animate-pulse" />
@@ -200,11 +220,11 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
     );
   }
 
-  if (isError) {
+  if (messages.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold">Conversation</h1>
-        <div className="p-8 text-center text-red-500">Failed to load conversation.</div>
+        <h1 className="text-2xl font-bold">Conversation {id?.slice(0, 8)}</h1>
+        <div className="p-8 text-center text-gray-400">No messages in this conversation.</div>
       </div>
     );
   }
@@ -213,8 +233,8 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Conversation {id.slice(0, 8)}</h1>
-          <span className="text-sm text-gray-500">{allMessages.length} messages</span>
+          <h1 className="text-2xl font-bold">Conversation {id?.slice(0, 8)}</h1>
+          <span className="text-sm text-gray-500">{messages.length} messages</span>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={expandAll} className="text-xs">Expand all</Button>
@@ -234,26 +254,25 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
         </div>
       </div>
 
-      {/* Load more at top */}
-      {hasNextPage && (
+      {hasMore && (
         <div className="flex justify-center">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fetchNextPage()}
-            disabled={isFetchingNextPage}
+            onClick={loadMore}
+            disabled={isFetching}
           >
-            {isFetchingNextPage ? (
+            {isFetching ? (
               <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Loading older...</>
             ) : (
-              <>Load older messages ({allMessages.length} loaded)</>
+              <>Load older messages ({messages.length} loaded)</>
             )}
           </Button>
         </div>
       )}
 
       <div className="space-y-1">
-        {allMessages.map((msg) => (
+        {messages.map((msg) => (
           <div key={msg.id} id={`msg-${msg.id}`}>
             <MessageRow
               msg={msg}
@@ -264,7 +283,6 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
         ))}
       </div>
 
-      {/* Scroll anchor at bottom */}
       <div ref={scrollAnchorRef} />
     </div>
   );

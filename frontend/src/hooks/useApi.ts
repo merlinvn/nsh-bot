@@ -45,6 +45,7 @@ export function useConversationMessages(conversationId: string, pageSize = 20) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.has_more ? lastPage.next_before : undefined,
+    maxPages: 100,
   });
 }
 
