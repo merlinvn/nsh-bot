@@ -143,7 +143,7 @@ async def worker_status(
         data = await r.get(key)
         if data:
             info = json.loads(data)
-            name = key.decode().replace("worker:heartbeat:", "")
+            name = key.replace("worker:heartbeat:", "")
             last_seen = info.get("timestamp")
             age_seconds = int(now - last_seen) if last_seen else None
             if age_seconds is not None:
