@@ -5,21 +5,17 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-import redis.asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_current_admin_user, get_db, get_redis
+from app.api.dependencies import get_current_admin_user, get_db
 from app.api.schemas.playground import BenchmarkRequest, CompletionRequest, PlaygroundChatRequest
+from app.api.services.llm_queue import enqueue_llm_request
 from app.core.config import settings
 from app.models.admin_user import AdminUser
 from app.models.benchmark_result import BenchmarkItem, BenchmarkResult
-from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import create_llm_client
-from app.workers.conversation.processor import MAX_LLM_STEPS, MAX_TOOL_CALLS_PER_STEP
-from app.workers.conversation.registry import get_registry, LocalToolBackend
-from app.workers.conversation.tools import TOOL_DEFINITIONS, ToolExecutor
 
 router = APIRouter(prefix="/admin/playground", tags=["admin:playground"])
 
@@ -29,47 +25,26 @@ async def playground_chat(
     body: PlaygroundChatRequest,
     _: AdminUser = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """Chat test using the same LLM flow as the conversation worker.
+    """Chat test via llm.process queue.
 
-    Uses OpenAI-compatible provider from config. System prompt is pre-loaded
-    from DB (selected by user) but can be edited before sending.
-    Conversation history is preserved between turns.
+    System prompt is pre-loaded from DB (selected by user) but can be edited
+    before sending. Conversation history is preserved between turns.
     """
-    client = create_llm_client(
-        provider=settings.llm_provider,
-        anthropic_api_key=settings.anthropic_api_key,
-        anthropic_model=settings.anthropic_model,
-        openai_base_url=settings.openai_base_url,
-        openai_api_key=settings.openai_api_key,
-        openai_model=settings.openai_model,
-    )
-
-    registry = get_registry()
-    backend = LocalToolBackend(registry)
-    tool_executor = ToolExecutor(backend)
-
-    runner = AgentRunner(
-        llm=client,
-        tool_executor=tool_executor,
-        system_prompt=body.system_prompt,
-        tool_definitions=list(TOOL_DEFINITIONS),
-        max_steps=MAX_LLM_STEPS,
-        max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
-    )
-
-    # Build history messages (role + content format)
     history_messages = [{"role": msg["role"], "content": msg["content"]} for msg in body.messages]
 
-    result = await runner.run(history_messages, body.user_message)
+    result = await enqueue_llm_request({
+        "channel": "playground",
+        "system_prompt": body.system_prompt,
+        "messages": history_messages,
+        "new_message": body.user_message,
+    })
 
     return {
-        "content": result.text,
-        "usage": result.token_usage,
-        "latency_ms": result.latency_ms,
-        "tool_calls": [
-            {"id": tc.id, "name": tc.name, "input": tc.input, "output": tc.output, "success": tc.success, "latency_ms": tc.latency_ms}
-            for tc in result.tool_calls
-        ],
+        "content": result.get("text", ""),
+        "usage": result.get("token_usage"),
+        "latency_ms": result.get("latency_ms", 0),
+        "tool_calls": result.get("tool_calls", []),
+        "error": result.get("error"),
     }
 
 

@@ -8,15 +8,9 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_admin_user, get_db
-from app.core.config import settings
+from app.api.services.llm_queue import enqueue_llm_request
 from app.models.admin_user import AdminUser
 from app.models.evaluation import EvaluationTestCase, PromptEvaluation
-from app.models.prompt import Prompt
-from app.workers.conversation.agent import AgentRunner
-from app.workers.conversation.llm import create_llm_client
-from app.workers.conversation.processor import MAX_LLM_STEPS, MAX_TOOL_CALLS_PER_STEP
-from app.workers.conversation.registry import get_registry, LocalToolBackend
-from app.workers.conversation.tools import ToolExecutor
 
 
 router = APIRouter(prefix="/admin/evaluations", tags=["admin:evaluations"])
@@ -191,7 +185,7 @@ async def run_evaluation(
     db: AsyncSession = Depends(get_db),
     _: AdminUser = Depends(get_current_admin_user),
 ):
-    """Run all test cases in an evaluation against the prompt."""
+    """Run all test cases in an evaluation against the prompt via llm.process queue."""
     result = await db.execute(
         select(PromptEvaluation)
         .options(selectinload(PromptEvaluation.test_cases))
@@ -201,112 +195,42 @@ async def run_evaluation(
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
 
-    # Get prompt template from DB
-    prompt_result = await db.execute(select(Prompt).where(Prompt.name == evaluation.prompt_name))
-    prompt_record = prompt_result.scalar_one_or_none()
-    system_prompt = prompt_record.template if prompt_record else ""
-
-    # Set up LLM
-    client = create_llm_client(
-        provider=settings.llm_provider,
-        anthropic_api_key=settings.anthropic_api_key,
-        anthropic_model=settings.anthropic_model,
-        openai_base_url=settings.openai_base_url,
-        openai_api_key=settings.openai_api_key,
-        openai_model=settings.openai_model,
-    )
-    registry = get_registry()
-    backend = LocalToolBackend(registry)
-    tool_executor = ToolExecutor(backend)
-
-    runner = AgentRunner(
-        llm=client,
-        tool_executor=tool_executor,
-        system_prompt=system_prompt,
-        tool_definitions=registry.definitions(),
-        max_steps=MAX_LLM_STEPS,
-        max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
-    )
-
     # Mark as running
     evaluation.status = "running"
     await db.commit()
 
-    passed_count = 0
-    failed_count = 0
     error_msg: str | None = None
 
     try:
         for tc in evaluation.test_cases:
-            try:
-                result = await runner.run([], tc.question)
-                actual = result.text.strip()
-                tc.actual_answer = actual
-                tc.latency_ms = result.latency_ms
+            # Publish to llm.process queue and wait for worker to process
+            llm_result = await enqueue_llm_request({
+                "channel": "evaluation",
+                "evaluation_id": str(evaluation.id),
+                "tc_id": str(tc.id),
+                "question": tc.question,
+                "expected_answer": tc.expected_answer,
+                "prompt_name": evaluation.prompt_name,
+            })
 
-                # LLM judge: evaluate semantic similarity
-                judge_prompt = f"""Bạn là người đánh giá câu trả lời của AI.
-
-Câu hỏi: {tc.question}
-
-Câu trả lời kỳ vọng: {tc.expected_answer}
-
-Câu trả lời thực tế: {actual}
-
-Hãy đánh giá câu trả lời thực tế có đúng ý và đầy đủ so với kỳ vọng không.
-Trả lời CHÍNH XÁC một trong hai format:
-PASS — nếu câu trả lời đúng ý, đầy đủ
-FAIL — nếu câu trả lời sai hoặc thiếu thông tin quan trọng
-
-Kèm theo giải thích ngắn gọn (1-2 câu) sau PASS/FAIL."""
-
-                judge_response = await client.complete(
-                    system_prompt=judge_prompt,
-                    messages=[{"role": "user", "content": "Đánh giá câu trả lời này."}],
-                    tools=[],
-                )
-
-                judge_text = judge_response.text.strip()
-
-                # Parse PASS/FAIL from response
-                is_passed = judge_text.lower().startswith("pass")
-                # Extract reasoning (everything after PASS/FAIL line)
-                lines = judge_text.split("\n")
-                reasoning_lines = [l for l in lines if not l.lower().startswith("pass") and not l.lower().startswith("fail") and l.strip()]
-                judgment = "PASS" if is_passed else "FAIL"
-                if reasoning_lines:
-                    judgment = f"{judgment}: {' '.join(reasoning_lines[:2])}"
-
-                tc.passed = is_passed
-                tc.judgment = judgment
-                tc.error = None
-
-                if is_passed:
-                    passed_count += 1
-                else:
-                    failed_count += 1
-
-            except Exception as exc:
-                tc.error = str(exc)
-                tc.passed = False
-                tc.judgment = None
-                tc.actual_answer = None
-                failed_count += 1
-
-        evaluation.status = "completed"
-        evaluation.completed_at = datetime.now(timezone.utc)
-        evaluation.total = len(evaluation.test_cases)
-        evaluation.passed = passed_count
-        evaluation.failed = failed_count
-        await db.commit()
+            # Worker updated DB directly; verify result
+            if llm_result.get("error"):
+                error_msg = llm_result["error"]
+                break
 
     except Exception as exc:
         evaluation.status = "failed"
         evaluation.error = str(exc)
         evaluation.completed_at = datetime.now(timezone.utc)
         await db.commit()
-        error_msg = str(exc)
+        return {
+            "id": str(evaluation.id),
+            "status": evaluation.status,
+            "error": str(exc),
+        }
 
+    # Refresh evaluation from DB to get final counts
+    await db.refresh(evaluation)
     return {
         "id": str(evaluation.id),
         "status": evaluation.status,

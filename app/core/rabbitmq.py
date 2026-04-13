@@ -16,10 +16,12 @@ DLX_EXCHANGE = "neochat.dlx"
 
 CONVERSATION_PROCESS_QUEUE = "conversation.process"
 OUTBOUND_SEND_QUEUE = "outbound.send"
+LLM_PROCESS_QUEUE = "llm.process"
 DEAD_LETTER_QUEUE = "dead-letter"
 
 CONVERSATION_PROCESS_RK = "conversation.process"
 OUTBOUND_SEND_RK = "outbound.send"
+LLM_PROCESS_RK = "llm.process"
 DEAD_LETTER_RK = "dead-letter"
 
 
@@ -55,6 +57,19 @@ async def get_rabbitmq_channel() -> AbstractChannel:
         },
     )
     await conv_queue.bind(direct_exchange, CONVERSATION_PROCESS_RK)
+
+    # llm.process queue
+    llm_queue = await _channel.declare_queue(
+        LLM_PROCESS_QUEUE,
+        durable=True,
+        arguments={
+            "x-dead-letter-exchange": DLX_EXCHANGE,
+            "x-dead-letter-routing-key": DEAD_LETTER_RK,
+            "x-message-ttl": 300000,
+            "x-max-length": 10000,
+        },
+    )
+    await llm_queue.bind(direct_exchange, LLM_PROCESS_RK)
 
     # outbound.send queue
     outbound_queue = await _channel.declare_queue(
