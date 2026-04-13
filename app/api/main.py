@@ -16,6 +16,7 @@ from app.api.routers.admin import (
     analytics_router,
     auth_router as admin_auth_router,
     conversations_router,
+    evaluations_router,
     monitoring_router,
     playground_router,
     prompts_router,
@@ -95,6 +96,7 @@ app.include_router(admin_auth_router)
 app.include_router(prompts_router)
 app.include_router(conversations_router)
 app.include_router(analytics_router)
+app.include_router(evaluations_router)
 app.include_router(playground_router)
 app.include_router(zalo_tokens_router)
 app.include_router(zalo_users_router)

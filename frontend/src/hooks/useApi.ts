@@ -355,3 +355,88 @@ export function useQueuePeek(vhost: string, queueName: string, count = 10) {
     refetchInterval: 5000,
   });
 }
+
+// Evaluations
+export interface EvaluationTestCase {
+  id: string;
+  question: string;
+  expected_answer: string;
+  actual_answer: string | null;
+  passed: boolean | null;
+  latency_ms: number | null;
+  error: string | null;
+}
+
+export interface Evaluation {
+  id: string;
+  name: string;
+  prompt_name: string;
+  status: string;
+  total: number | null;
+  passed: number | null;
+  failed: number | null;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+  test_cases: EvaluationTestCase[];
+}
+
+export function useEvaluations() {
+  return useQuery<Evaluation[]>({
+    queryKey: ["evaluations"],
+    queryFn: () => api.get("/admin/evaluations"),
+    refetchInterval: 30000,
+  });
+}
+
+export function useEvaluation(id: string) {
+  return useQuery<Evaluation>({
+    queryKey: ["evaluation", id],
+    queryFn: () => api.get(`/admin/evaluations/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateEvaluation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; prompt_name: string; test_cases: { question: string; expected_answer: string }[] }) =>
+      api.post<{ id: string; name: string; status: string }>("/admin/evaluations", body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["evaluations"] }),
+  });
+}
+
+export function useDeleteEvaluation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete<{ ok: boolean }>(`/admin/evaluations/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["evaluations"] }),
+  });
+}
+
+export function useAddEvaluationTestCase() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ evaluationId, body }: { evaluationId: string; body: { question: string; expected_answer: string } }) =>
+      api.post<{ id: string }>(`/admin/evaluations/${evaluationId}/test-cases`, body),
+    onSuccess: (_data, vars) => queryClient.invalidateQueries({ queryKey: ["evaluation", vars.evaluationId] }),
+  });
+}
+
+export function useDeleteEvaluationTestCase() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ evaluationId, tcId }: { evaluationId: string; tcId: string }) =>
+      api.delete<{ ok: boolean }>(`/admin/evaluations/${evaluationId}/test-cases/${tcId}`),
+    onSuccess: (_data, vars) => queryClient.invalidateQueries({ queryKey: ["evaluation", vars.evaluationId] }),
+  });
+}
+
+export function useRunEvaluation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (evaluationId: string) =>
+      api.post<{ id: string; status: string; total: number | null; passed: number | null; failed: number | null; error: string | null }>(`/admin/evaluations/${evaluationId}/run`, {}),
+    onSuccess: (_data, vars) => queryClient.invalidateQueries({ queryKey: ["evaluation", vars] }),
+  });
+}
