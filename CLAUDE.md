@@ -9,27 +9,24 @@ NeoChatPlatform is a multi-phase AI conversation platform starting with Zalo OA 
 ## Architecture
 
 ```
-Zalo → Webhook (FastAPI) → RabbitMQ (conversation.process) → Conversation Worker → RabbitMQ (outbound.send) → Outbound Worker → Zalo API
+Zalo → Webhook (FastAPI) → RabbitMQ (conversation.process) → Conversation Worker → RabbitMQ (llm.process) → LLMWorker → RabbitMQ (outbound.send) → Outbound Worker → Zalo API
          ↓
 Admin Browser (Next.js) ──► Admin API (FastAPI /admin/*) ──► PostgreSQL / Redis / RabbitMQ
-                                                                  │
-                                                          ┌───────┴───────┐
-                                                          │  llm.process  │ ← LLMWorker (playground + evaluation)
-                                                          └───────────────┘
 ```
 
 ### Message Queues
 
 | Queue | Consumer | Purpose |
 |-------|----------|---------|
-| `conversation.process` | ConversationWorker | Zalo inbound message processing |
+| `conversation.process` | ConversationWorker | Zalo inbound message receipt |
+| `llm.process` | LLMWorker | All LLM calls: Zalo, playground, evaluation |
 | `outbound.send` | OutboundWorker | Zalo outbound delivery |
-| `llm.process` | LLMWorker | Playground chat, evaluation test cases |
 
 ### Components
 
 **Workers (all run as separate containers):**
-- **Conversation Worker**: Consumes `conversation.process`, runs LLM agent + tools, publishes to `outbound.send`
+- **Conversation Worker**: Consumes `conversation.process`, saves inbound message, publishes to `llm.process` with `channel="zalo"`, waits for Redis response, publishes to `outbound.send`
+- **LLM Worker**: Consumes `llm.process`, handles playground chat, evaluation test cases, and Zalo LLM calls. Routes responses by `channel`: `playground` → Redis pub/sub, `evaluation` → DB update + Redis pub/sub, `zalo` → Redis + DB update
 - **Outbound Worker**: Consumes `outbound.send`, calls Zalo API with retry logic
 - **LLM Worker**: Consumes `llm.process`, handles playground chat and evaluation LLM calls. Routes responses by `channel`: `playground` → Redis pub/sub, `evaluation` → DB update, `zalo` → `outbound.send`
 
