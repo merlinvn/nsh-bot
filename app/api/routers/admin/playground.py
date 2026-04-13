@@ -11,13 +11,50 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_admin_user, get_db, get_redis
-from app.api.schemas.playground import BenchmarkRequest, CompletionRequest
+from app.api.schemas.playground import BenchmarkRequest, CompletionRequest, PlaygroundChatRequest
 from app.core.config import settings
 from app.models.admin_user import AdminUser
 from app.models.benchmark_result import BenchmarkItem, BenchmarkResult
 from app.workers.conversation.llm import create_llm_client
 
 router = APIRouter(prefix="/admin/playground", tags=["admin:playground"])
+
+
+@router.post("/chat")
+async def playground_chat(
+    body: PlaygroundChatRequest,
+    _: AdminUser = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Chat test using the same LLM flow as the conversation worker.
+
+    Uses OpenAI-compatible provider from config. System prompt is pre-loaded
+    from DB (selected by user) but can be edited before sending.
+    Conversation history is preserved between turns.
+    """
+    client = create_llm_client(
+        provider=settings.llm_provider,
+        anthropic_api_key=settings.anthropic_api_key,
+        anthropic_model=settings.anthropic_model,
+        openai_base_url=settings.openai_base_url,
+        openai_api_key=settings.openai_api_key,
+        openai_model=settings.openai_model,
+    )
+
+    # Build conversation history for LLM (same format as conversation worker)
+    history_messages = [{"role": msg["role"], "content": msg["content"]} for msg in body.messages]
+    history_messages.append({"role": "user", "content": body.user_message})
+
+    response = await client.complete(
+        system_prompt=body.system_prompt,
+        messages=history_messages,
+        tools=[],  # No tools in playground
+    )
+
+    return {
+        "content": response.text,
+        "usage": response.token_usage,
+        "latency_ms": response.latency_ms,
+    }
 
 
 @router.post("/complete")

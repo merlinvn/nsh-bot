@@ -12,6 +12,14 @@ class CompletionRequest(BaseModel):
     max_tokens: int | None = 1024
 
 
+class PlaygroundChatRequest(BaseModel):
+    """Request for playground chat (uses same flow as conversation worker)."""
+    system_prompt: str
+    messages: list[dict]  # [{"role": "user" | "assistant", "content": str}]
+    user_message: str  # New message to send
+    temperature: float | None = 0.7
+
+
 class BenchmarkRequest(BaseModel):
     """Request to run a benchmark."""
     name: str

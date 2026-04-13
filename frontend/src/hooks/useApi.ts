@@ -121,7 +121,7 @@ export function usePrompts() {
 }
 
 export function usePrompt(name: string) {
-  return useQuery<Prompt & { versions?: { version: number; created_at: string }[] }>({
+  return useQuery<Prompt>({
     queryKey: ["prompt", name],
     queryFn: () => api.get(`/admin/prompts/${name}`),
     enabled: !!name,
@@ -201,6 +201,17 @@ export function usePlaygroundComplete() {
       temperature?: number;
       max_tokens?: number;
     }) => api.post<{ content: string; usage?: unknown; latency_ms?: number }>("/admin/playground/complete", body),
+  });
+}
+
+export function usePlaygroundChat() {
+  return useMutation({
+    mutationFn: (body: {
+      system_prompt: string;
+      messages: { role: string; content: string }[];
+      user_message: string;
+      temperature?: number;
+    }) => api.post<{ content: string; usage?: unknown; latency_ms?: number }>("/admin/playground/chat", body),
   });
 }
 

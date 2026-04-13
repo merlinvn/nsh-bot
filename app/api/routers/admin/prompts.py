@@ -40,12 +40,18 @@ async def create_prompt(body: PromptCreate, db: AsyncSession = Depends(get_db)):
 
 @router.get("/{name}")
 async def get_prompt(name: str, db: AsyncSession = Depends(get_db)):
-    """Get prompt detail."""
+    """Get prompt detail with all versions."""
     result = await db.execute(select(Prompt).where(Prompt.name == name))
     prompt = result.scalar_one_or_none()
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
-    return {"name": prompt.name, "description": prompt.description, "active_version": int(prompt.active_version)}
+    return {
+        "name": prompt.name,
+        "description": prompt.description,
+        "active_version": int(prompt.active_version),
+        "template": prompt.template,
+        "versions": prompt.versions,
+    }
 
 
 @router.put("/{name}")
