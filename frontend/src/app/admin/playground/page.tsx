@@ -22,6 +22,7 @@ export default function PlaygroundPage() {
   const [userMessage, setUserMessage] = useState("");
   const [response, setResponse] = useState<string>("");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<{ input_tokens: number; output_tokens: number } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const { data: prompts, isLoading: promptsLoading } = usePrompts();
@@ -101,6 +102,9 @@ export default function PlaygroundPage() {
       });
       setResponse(result.content);
       setLatencyMs(result.latency_ms ?? null);
+      if (result.usage) {
+        setTokenUsage(result.usage as { input_tokens: number; output_tokens: number });
+      }
       setChatHistory((prev) => [...prev, { role: "assistant", content: result.content }]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -115,6 +119,7 @@ export default function PlaygroundPage() {
     setChatHistory([]);
     setResponse("");
     setLatencyMs(null);
+    setTokenUsage(null);
     setUserMessage("");
   };
 
@@ -260,15 +265,10 @@ export default function PlaygroundPage() {
             </Card>
           )}
 
-          {/* Response */}
+          {/* Response info */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Phản hồi</CardTitle>
-                {latencyMs !== null && (
-                  <span className="text-xs text-gray-400">{Math.round(latencyMs)}ms</span>
-                )}
-              </div>
+              <CardTitle className="text-sm">Thông tin</CardTitle>
             </CardHeader>
             <CardContent>
               {isGenerating ? (
@@ -276,10 +276,29 @@ export default function PlaygroundPage() {
                   <RefreshCw className="h-4 w-4 animate-spin" />
                   <span className="text-sm">Đang xử lý...</span>
                 </div>
-              ) : response ? (
-                <pre className="whitespace-pre-wrap text-sm">{response}</pre>
+              ) : latencyMs !== null || tokenUsage ? (
+                <div className="space-y-2 text-sm">
+                  {latencyMs !== null && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 w-28">Latency:</span>
+                      <span className="font-medium">{Math.round(latencyMs)}ms</span>
+                    </div>
+                  )}
+                  {tokenUsage && (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500 w-28">Input tokens:</span>
+                        <span className="font-medium">{tokenUsage.input_tokens.toLocaleString()}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500 w-28">Output tokens:</span>
+                        <span className="font-medium">{tokenUsage.output_tokens.toLocaleString()}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
               ) : (
-                <p className="text-gray-400 text-sm">Phản hồi sẽ xuất hiện ở đây</p>
+                <p className="text-gray-400 text-sm">Gửi tin nhắn để xem thông tin</p>
               )}
             </CardContent>
           </Card>
