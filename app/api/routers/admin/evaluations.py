@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_admin_user, get_db
@@ -84,7 +85,11 @@ async def create_evaluation(
 @router.get("/{evaluation_id}")
 async def get_evaluation(evaluation_id: str, db: AsyncSession = Depends(get_db)):
     """Get evaluation with all test cases."""
-    result = await db.execute(select(PromptEvaluation).where(PromptEvaluation.id == uuid.UUID(evaluation_id)))
+    result = await db.execute(
+        select(PromptEvaluation)
+        .options(selectinload(PromptEvaluation.test_cases))
+        .where(PromptEvaluation.id == uuid.UUID(evaluation_id))
+    )
     evaluation = result.scalar_one_or_none()
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
@@ -118,7 +123,11 @@ async def get_evaluation(evaluation_id: str, db: AsyncSession = Depends(get_db))
 @router.delete("/{evaluation_id}")
 async def delete_evaluation(evaluation_id: str, db: AsyncSession = Depends(get_db)):
     """Delete an evaluation."""
-    result = await db.execute(select(PromptEvaluation).where(PromptEvaluation.id == uuid.UUID(evaluation_id)))
+    result = await db.execute(
+        select(PromptEvaluation)
+        .options(selectinload(PromptEvaluation.test_cases))
+        .where(PromptEvaluation.id == uuid.UUID(evaluation_id))
+    )
     evaluation = result.scalar_one_or_none()
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
@@ -134,7 +143,11 @@ async def add_test_case(
     db: AsyncSession = Depends(get_db),
 ):
     """Add a test case to an evaluation."""
-    result = await db.execute(select(PromptEvaluation).where(PromptEvaluation.id == uuid.UUID(evaluation_id)))
+    result = await db.execute(
+        select(PromptEvaluation)
+        .options(selectinload(PromptEvaluation.test_cases))
+        .where(PromptEvaluation.id == uuid.UUID(evaluation_id))
+    )
     evaluation = result.scalar_one_or_none()
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
@@ -178,7 +191,11 @@ async def run_evaluation(
     _: AdminUser = Depends(get_current_admin_user),
 ):
     """Run all test cases in an evaluation against the prompt."""
-    result = await db.execute(select(PromptEvaluation).where(PromptEvaluation.id == uuid.UUID(evaluation_id)))
+    result = await db.execute(
+        select(PromptEvaluation)
+        .options(selectinload(PromptEvaluation.test_cases))
+        .where(PromptEvaluation.id == uuid.UUID(evaluation_id))
+    )
     evaluation = result.scalar_one_or_none()
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
