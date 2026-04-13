@@ -9,13 +9,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from app.core.config import get_settings
 from app.workers.llm.consumer import LLMConsumer
+from app.workers.shared.heartbeat import start_heartbeat_loop
 from app.workers.shared.logging import get_logger, setup_logging
 
 settings = get_settings()
 logger: object | None = None
 _shutdown_event = asyncio.Event()
 
-WORKER_HEALTH_PORT = int(settings.worker_metrics_port) + 2  # 8082 if base is 8080
+WORKER_HEALTH_PORT = int(settings.worker_metrics_port)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -56,11 +57,8 @@ def _setup_signals(loop: asyncio.AbstractEventLoop) -> None:
 
 
 async def _graceful_shutdown(consumer: LLMConsumer) -> None:
-    logger.info("Starting graceful shutdown (max 30s)")
-    try:
-        await asyncio.wait_for(_shutdown_event.wait(), timeout=30.0)
-    except asyncio.TimeoutError:
-        logger.warning("Graceful shutdown timeout reached, forcing exit")
+    logger.info("Starting graceful shutdown")
+    await _shutdown_event.wait()
     await consumer.close()
     logger.info("LLM worker exited")
 
@@ -76,6 +74,8 @@ async def main() -> None:
 
     consumer = LLMConsumer()
 
+    heartbeat_task = await start_heartbeat_loop("llm-worker")
+
     shutdown_task = asyncio.create_task(_graceful_shutdown(consumer))
 
     try:
@@ -83,7 +83,12 @@ async def main() -> None:
     except asyncio.CancelledError:
         logger.info("LLM worker cancelled")
     finally:
+        heartbeat_task.cancel()
         shutdown_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
         try:
             await shutdown_task
         except asyncio.CancelledError:

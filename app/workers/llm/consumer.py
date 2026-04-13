@@ -31,7 +31,6 @@ class LLMConsumer:
 
     async def run(self) -> None:
         """Connect to RabbitMQ and start consuming messages."""
-        self._running = True
         self._connection = await aio_pika.connect_robust(
             self._get_rabbitmq_url(),
             timeout=10.0,
@@ -50,6 +49,7 @@ class LLMConsumer:
             },
         )
 
+        self._running = True
         logger.info("llm_consumer_started", extra={"queue": QUEUE_NAME, "prefetch": QUEUE_PREFETCH})
         await self._queue.consume(self._on_message)
 
