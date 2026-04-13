@@ -58,7 +58,7 @@ export default function PlaygroundPage() {
       (v: { version: number }) => v.version === Number(selectedVersion)
     );
     if (ver) {
-      setSystemPrompt(promptDetail.template || "");
+      setSystemPrompt(ver.template || promptDetail.template || "");
     }
   }, [selectedVersion, promptDetail, selectedPromptName]);
 
