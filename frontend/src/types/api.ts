@@ -59,6 +59,13 @@ export interface AnalyticsOverview {
   fallback_rate: number;
 }
 
+export interface PromptVersion {
+  version: number;
+  template: string;
+  created_at: string;
+  active: boolean;
+}
+
 export interface Prompt {
   name: string;
   description: string | null;

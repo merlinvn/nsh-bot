@@ -131,4 +131,13 @@ async def list_versions(name: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     versions = prompt.versions or []
-    return [{"version": v.get("version"), "created_at": prompt.created_at.isoformat()} for v in versions]
+    current_active = int(prompt.active_version)
+    return [
+        {
+            "version": v.get("version"),
+            "template": v.get("template"),
+            "created_at": prompt.updated_at.isoformat(),
+            "active": v.get("version") == current_active,
+        }
+        for v in versions
+    ]

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { usePrompts, useCreatePrompt } from "@/hooks/useApi";
+import { usePrompts, useCreatePrompt, useDeletePrompt } from "@/hooks/useApi";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,16 +14,28 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import Link from "next/link";
 import { toast } from "sonner";
 
 export default function PromptsPage() {
   const { data, isLoading } = usePrompts();
   const createMutation = useCreatePrompt();
+  const deleteMutation = useDeletePrompt();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newTemplate, setNewTemplate] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<{ name: string } | null>(null);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +53,17 @@ export default function PromptsPage() {
       setNewTemplate("");
     } catch {
       toast.error("Failed to create prompt");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.name);
+      toast.success(`Prompt "${deleteTarget.name}" deleted`);
+      setDeleteTarget(null);
+    } catch {
+      toast.error("Failed to delete prompt");
     }
   };
 
@@ -80,9 +103,19 @@ export default function PromptsPage() {
                     <td className="px-4 py-3 text-sm text-gray-500">{prompt.description || "—"}</td>
                     <td className="px-4 py-3 text-sm">v{prompt.active_version}</td>
                     <td className="px-4 py-3">
-                      <Link href={`/admin/prompts/${prompt.name}`}>
-                        <Button variant="ghost" size="sm">Edit</Button>
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/admin/prompts/${prompt.name}`}>
+                          <Button variant="ghost" size="sm">Edit</Button>
+                        </Link>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-600"
+                          onClick={() => setDeleteTarget({ name: prompt.name })}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -143,6 +176,26 @@ export default function PromptsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Prompt</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

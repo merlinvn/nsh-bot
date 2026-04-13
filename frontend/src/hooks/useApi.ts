@@ -163,6 +163,20 @@ export function useActivatePromptVersion(name: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["prompts"] });
       queryClient.invalidateQueries({ queryKey: ["prompt", name] });
+      queryClient.invalidateQueries({ queryKey: ["prompt-versions", name] });
+    },
+  });
+}
+
+export function useCreatePromptVersion(name: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { template?: string }) =>
+      api.post(`/admin/prompts/${name}/versions`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["prompts"] });
+      queryClient.invalidateQueries({ queryKey: ["prompt", name] });
+      queryClient.invalidateQueries({ queryKey: ["prompt-versions", name] });
     },
   });
 }

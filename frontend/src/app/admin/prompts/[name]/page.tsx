@@ -1,16 +1,22 @@
 "use client";
+import { useState } from "react";
+import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { useParams } from "next/navigation";
+import { useUpdatePrompt, useActivatePromptVersion } from "@/hooks/useApi";
 import { PromptForm } from "@/components/forms/PromptForm";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import type { PromptVersion } from "@/types/api";
 
 export default function PromptDetailPage() {
   const params = useParams();
   const name = params.name as string;
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<PromptVersion | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["prompt", name],
@@ -19,75 +25,112 @@ export default function PromptDetailPage() {
 
   const { data: versions } = useQuery({
     queryKey: ["prompt-versions", name],
-    queryFn: () => api.get<{ version: number; created_at: string }[]>(`/admin/prompts/${name}/versions`),
-    enabled: !!name && isEditing,
+    queryFn: () => api.get<PromptVersion[]>(`/admin/prompts/${name}/versions`),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: (template: string) => api.put(`/admin/prompts/${name}`, { template }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["prompts"] });
-      queryClient.invalidateQueries({ queryKey: ["prompt", name] });
+  const updatePrompt = useUpdatePrompt(name);
+  const activateVersion = useActivatePromptVersion(name);
+
+  const handleUpdate = async (template: string) => {
+    try {
+      await updatePrompt.mutateAsync({ template });
+      toast.success("New version created");
       setIsEditing(false);
-    },
-  });
+    } catch {
+      toast.error("Failed to update prompt");
+    }
+  };
 
-  const activateMutation = useMutation({
-    mutationFn: (version: number) => api.post(`/admin/prompts/${name}/activate`, { version }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["prompts"] });
-      queryClient.invalidateQueries({ queryKey: ["prompt", name] });
-      queryClient.invalidateQueries({ queryKey: ["prompt-versions", name] });
-    },
-  });
+  const handleActivate = async (version: number) => {
+    try {
+      await activateVersion.mutateAsync(version);
+      toast.success(`Version ${version} activated`);
+    } catch {
+      toast.error("Failed to activate version");
+    }
+  };
 
   if (isLoading) return <div>Loading...</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Prompt: {name}</h1>
-        {!isEditing && (
-          <Button onClick={() => setIsEditing(true)}>Edit Template</Button>
-        )}
-      </div>
-      {data && (
-        <p className="text-gray-500">{data.description || "No description"}</p>
-      )}
-      {isEditing ? (
-        <PromptForm
-          onSubmit={(template) => updateMutation.mutate(template)}
-          isLoading={updateMutation.isPending}
-        />
-      ) : (
-        <div className="text-gray-400">Click &quot;Edit Template&quot; to modify this prompt</div>
-      )}
-      {versions && versions.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-lg font-medium">Version History</h2>
-          {versions.map((v) => (
-            <div key={v.version} className="flex items-center justify-between border rounded p-3">
-              <div>
-                <span className="font-medium">Version {v.version}</span>
-                <span className="ml-2 text-sm text-gray-500">{new Date(v.created_at).toLocaleString()}</span>
-              </div>
-              {data && v.version !== data.active_version && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => activateMutation.mutate(v.version)}
-                  disabled={activateMutation.isPending}
-                >
-                  Activate
-                </Button>
-              )}
-              {data && v.version === data.active_version && (
-                <span className="text-sm text-green-600 font-medium">Active</span>
-              )}
-            </div>
-          ))}
+        <div>
+          <h1 className="text-2xl font-bold">{name}</h1>
+          {data?.description && (
+            <p className="text-gray-500 mt-1">{data.description}</p>
+          )}
         </div>
+        <Button onClick={() => setIsEditing(!isEditing)} variant={isEditing ? "outline" : "default"}>
+          {isEditing ? "Cancel" : "Edit Template"}
+        </Button>
+      </div>
+
+      {isEditing && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Create New Version</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PromptForm
+              onSubmit={handleUpdate}
+              initialValue={versions?.find(v => v.active)?.template}
+              isLoading={updatePrompt.isPending}
+            />
+          </CardContent>
+        </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Version History</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {!versions || versions.length === 0 ? (
+            <div className="p-6 text-center text-gray-400">No version history</div>
+          ) : (
+            <div className="divide-y">
+              {[...versions].reverse().map((v) => (
+                <div
+                  key={v.version}
+                  className={`p-4 hover:bg-gray-50 cursor-pointer ${selectedVersion?.version === v.version ? "bg-gray-50" : ""}`}
+                  onClick={() => setSelectedVersion(selectedVersion?.version === v.version ? null : v)}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">Version {v.version}</span>
+                      {v.active && <Badge variant="default" className="text-xs">Active</Badge>}
+                      <span className="text-sm text-gray-400">
+                        {new Date(v.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    {!v.active && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleActivate(v.version);
+                        }}
+                        disabled={activateVersion.isPending}
+                      >
+                        Activate
+                      </Button>
+                    )}
+                  </div>
+                  {selectedVersion?.version === v.version && (
+                    <div className="mt-3 p-3 bg-gray-900 rounded-md">
+                      <pre className="text-sm text-gray-100 whitespace-pre-wrap font-mono overflow-x-auto">
+                        {v.template}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
