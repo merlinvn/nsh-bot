@@ -25,10 +25,9 @@ Admin Browser (Next.js) ──► Admin API (FastAPI /admin/*) ──► Postgre
 ### Components
 
 **Workers (all run as separate containers):**
-- **Conversation Worker**: Consumes `conversation.process`, saves inbound message, publishes to `llm.process` with `channel="zalo"`, waits for Redis response, publishes to `outbound.send`
-- **LLM Worker**: Consumes `llm.process`, handles playground chat, evaluation test cases, and Zalo LLM calls. Routes responses by `channel`: `playground` → Redis pub/sub, `evaluation` → DB update + Redis pub/sub, `zalo` → Redis + DB update
+- **Conversation Worker**: Consumes `conversation.process`, saves inbound message, publishes to `llm.process` with `channel="zalo"`, waits for Redis response, publishes to `outbound.send`. Does NOT call LLM directly.
+- **LLM Worker**: Consumes `llm.process`, runs all LLM calls (Zalo, playground, evaluation) via `AgentRunner`. Routes responses by `channel`: `playground` → Redis pub/sub, `evaluation` → DB update + Redis pub/sub, `zalo` → Redis response
 - **Outbound Worker**: Consumes `outbound.send`, calls Zalo API with retry logic
-- **LLM Worker**: Consumes `llm.process`, handles playground chat and evaluation LLM calls. Routes responses by `channel`: `playground` → Redis pub/sub, `evaluation` → DB update, `zalo` → `outbound.send`
 
 **Backend (FastAPI):**
 - **Webhook API**: Receives Zalo webhooks, response < 200ms

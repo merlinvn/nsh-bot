@@ -28,22 +28,27 @@
 
 | Worker | Status | Queue | Files |
 |--------|--------|-------|-------|
-| ConversationWorker | ✅ (unchanged) | `conversation.process` | `app/workers/conversation/` |
+| ConversationWorker | ✅ (updated) | `conversation.process` → `llm.process` | `app/workers/conversation/` |
 | OutboundWorker | ✅ (unchanged) | `outbound.send` | `app/workers/outbound/` |
 | LLMWorker | ✅ **NEW** | `llm.process` | `app/workers/llm/` |
 
 ### LLM Queue Architecture
 
-All LLM calls for playground and evaluation now go through `llm.process` queue:
+All LLM calls now go through `llm.process` queue:
 
 ```
+Zalo webhook ──► conversation.process ──► ConversationWorker
+                                              │ (saves inbound msg, publishes to llm.process)
+                                              ▼
 playground /chat ──► llm.process ──► LLMWorker ──► Redis pub/sub ──► API
 evaluation /run ───► llm.process ──► LLMWorker ──► DB update + Redis pub/sub
+zalo message ──────► llm.process ──► LLMWorker ──► Redis response ──► ConversationWorker ──► outbound.send
 ```
 
 Response routing by `channel` field:
 - `playground` → Redis pub/sub response
 - `evaluation` → DB update (test case + evaluation summary) + Redis pub/sub
+- `zalo` → Redis response to ConversationWorker → outbound.send
 - `zalo` → `outbound.send` queue (future migration path)
 
 ### Data Models (PostgreSQL)
