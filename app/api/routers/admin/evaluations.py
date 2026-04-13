@@ -112,6 +112,7 @@ async def get_evaluation(evaluation_id: str, db: AsyncSession = Depends(get_db))
                 "expected_answer": tc.expected_answer,
                 "actual_answer": tc.actual_answer,
                 "passed": tc.passed,
+                "judgment": tc.judgment,
                 "latency_ms": tc.latency_ms,
                 "error": tc.error,
             }
@@ -239,17 +240,45 @@ async def run_evaluation(
         for tc in evaluation.test_cases:
             try:
                 result = await runner.run([], tc.question)
-
                 actual = result.text.strip()
-
-                # Simple string comparison (case-insensitive, stripped)
-                expected_lower = tc.expected_answer.strip().lower()
-                actual_lower = actual.lower()
-                is_passed = expected_lower in actual_lower or actual_lower in expected_lower
-
                 tc.actual_answer = actual
-                tc.passed = is_passed
                 tc.latency_ms = result.latency_ms
+
+                # LLM judge: evaluate semantic similarity
+                judge_prompt = f"""Bạn là người đánh giá câu trả lời của AI.
+
+Câu hỏi: {tc.question}
+
+Câu trả lời kỳ vọng: {tc.expected_answer}
+
+Câu trả lời thực tế: {actual}
+
+Hãy đánh giá câu trả lời thực tế có đúng ý và đầy đủ so với kỳ vọng không.
+Trả lời CHÍNH XÁC một trong hai format:
+PASS — nếu câu trả lời đúng ý, đầy đủ
+FAIL — nếu câu trả lời sai hoặc thiếu thông tin quan trọng
+
+Kèm theo giải thích ngắn gọn (1-2 câu) sau PASS/FAIL."""
+
+                judge_response = await client.complete(
+                    system_prompt=judge_prompt,
+                    messages=[{"role": "user", "content": "Đánh giá câu trả lời này."}],
+                    tools=[],
+                )
+
+                judge_text = judge_response.text.strip()
+
+                # Parse PASS/FAIL from response
+                is_passed = judge_text.lower().startswith("pass")
+                # Extract reasoning (everything after PASS/FAIL line)
+                lines = judge_text.split("\n")
+                reasoning_lines = [l for l in lines if not l.lower().startswith("pass") and not l.lower().startswith("fail") and l.strip()]
+                judgment = "PASS" if is_passed else "FAIL"
+                if reasoning_lines:
+                    judgment = f"{judgment}: {' '.join(reasoning_lines[:2])}"
+
+                tc.passed = is_passed
+                tc.judgment = judgment
                 tc.error = None
 
                 if is_passed:
@@ -260,6 +289,7 @@ async def run_evaluation(
             except Exception as exc:
                 tc.error = str(exc)
                 tc.passed = False
+                tc.judgment = None
                 tc.actual_answer = None
                 failed_count += 1
 

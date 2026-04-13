@@ -49,6 +49,7 @@ class EvaluationTestCase(Base):
     # Filled after running
     actual_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    judgment: Mapped[str | None] = mapped_column(Text, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

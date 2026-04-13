@@ -249,8 +249,8 @@ export default function EvaluationsPage() {
                             <th className="pb-2 font-medium">Câu hỏi</th>
                             <th className="pb-2 font-medium">Kỳ vọng</th>
                             <th className="pb-2 font-medium">Thực tế</th>
-                            <th className="pb-2 font-medium w-20">Kết quả</th>
-                            <th className="pb-2 font-medium w-20"></th>
+                            <th className="pb-2 font-medium">Đánh giá</th>
+                            <th className="pb-2 font-medium w-16"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -277,9 +277,15 @@ export default function EvaluationsPage() {
                                 )}
                               </td>
                               <td className="py-2">
-                                {tc.passed === true && <CheckCircle2 className="h-5 w-5 text-green-600" />}
-                                {tc.passed === false && <XCircle className="h-5 w-5 text-red-600" />}
-                                {tc.passed === null && <Clock className="h-5 w-5 text-gray-400" />}
+                                {tc.judgment ? (
+                                  <div className={`text-xs max-w-xs rounded p-2 ${tc.passed ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                                    {tc.judgment}
+                                  </div>
+                                ) : (
+                                  <div className="text-gray-400 text-xs italic">
+                                    {tc.passed === null ? <Clock className="h-4 w-4" /> : "—"}
+                                  </div>
+                                )}
                               </td>
                               <td className="py-2">
                                 <Button

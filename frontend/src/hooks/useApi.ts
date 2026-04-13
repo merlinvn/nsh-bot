@@ -363,6 +363,7 @@ export interface EvaluationTestCase {
   expected_answer: string;
   actual_answer: string | null;
   passed: boolean | null;
+  judgment: string | null;
   latency_ms: number | null;
   error: string | null;
 }
