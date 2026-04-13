@@ -273,7 +273,7 @@ export default function PlaygroundPage() {
             <CardHeader>
               <CardTitle className="text-sm">Thông tin</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="max-h-[70vh] overflow-y-auto">
               {isGenerating ? (
                 <div className="flex items-center gap-2 text-gray-400">
                   <RefreshCw className="h-4 w-4 animate-spin" />
@@ -283,18 +283,18 @@ export default function PlaygroundPage() {
                 <div className="space-y-2 text-sm">
                   {latencyMs !== null && (
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-500 w-28">Latency:</span>
+                      <span className="text-gray-500 w-28 shrink-0">Latency:</span>
                       <span className="font-medium">{Math.round(latencyMs)}ms</span>
                     </div>
                   )}
                   {tokenUsage && (
                     <>
                       <div className="flex items-center gap-2">
-                        <span className="text-gray-500 w-28">Input tokens:</span>
+                        <span className="text-gray-500 w-28 shrink-0">Input tokens:</span>
                         <span className="font-medium">{tokenUsage.input_tokens.toLocaleString()}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-gray-500 w-28">Output tokens:</span>
+                        <span className="text-gray-500 w-28 shrink-0">Output tokens:</span>
                         <span className="font-medium">{tokenUsage.output_tokens.toLocaleString()}</span>
                       </div>
                     </>
@@ -304,17 +304,20 @@ export default function PlaygroundPage() {
                       <div className="text-xs font-medium text-orange-600">Tool Calls ({toolCalls.length})</div>
                       {toolCalls.map((tc, i) => (
                         <div key={i} className={`border rounded p-2 text-xs ${tc.success ? "bg-orange-50 border-orange-200" : "bg-red-50 border-red-200"}`}>
-                          <div className="flex items-center justify-between">
-                            <span className={`font-medium ${tc.success ? "text-orange-700" : "text-red-700"}`}>{tc.name}</span>
-                            <span className="text-gray-400 text-xs">{tc.latency_ms}ms</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className={`font-medium truncate ${tc.success ? "text-orange-700" : "text-red-700"}`}>{tc.name}</span>
+                            <span className="text-gray-400 text-xs shrink-0">{tc.latency_ms}ms</span>
                           </div>
-                          <div className="text-orange-600 mt-1">Input: <pre className="inline whitespace-pre-wrap">{JSON.stringify(tc.input)}</pre></div>
-                          <div className="mt-1">
-                            <span className="text-gray-500">Output: </span>
+                          <div className="mt-1 text-orange-700 break-all">
+                            <span className="text-gray-500">In: </span>
+                            <pre className="inline whitespace-pre-wrap break-normal text-xs">{JSON.stringify(tc.input)}</pre>
+                          </div>
+                          <div className="mt-1 text-green-700 break-all">
+                            <span className="text-gray-500">Out: </span>
                             {tc.success ? (
-                              <pre className="inline text-green-700 whitespace-pre-wrap">{JSON.stringify(tc.output)}</pre>
+                              <pre className="inline whitespace-pre-wrap break-normal text-xs">{JSON.stringify(tc.output)}</pre>
                             ) : (
-                              <span className="text-red-600">{JSON.stringify(tc.output)}</span>
+                              <span className="text-red-600 text-xs">{JSON.stringify(tc.output)}</span>
                             )}
                           </div>
                         </div>
