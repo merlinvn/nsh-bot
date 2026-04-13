@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.models.admin_user import AdminUser
 from app.models.benchmark_result import BenchmarkItem, BenchmarkResult
 from app.workers.conversation.llm import create_llm_client
+from app.workers.conversation.tools import TOOL_DEFINITIONS
 
 router = APIRouter(prefix="/admin/playground", tags=["admin:playground"])
 
@@ -47,13 +48,17 @@ async def playground_chat(
     response = await client.complete(
         system_prompt=body.system_prompt,
         messages=history_messages,
-        tools=[],  # No tools in playground
+        tools=list(TOOL_DEFINITIONS),
     )
 
     return {
         "content": response.text,
         "usage": response.token_usage,
         "latency_ms": response.latency_ms,
+        "tool_calls": [
+            {"id": tc.id, "name": tc.name, "input": tc.input}
+            for tc in response.tool_calls
+        ],
     }
 
 

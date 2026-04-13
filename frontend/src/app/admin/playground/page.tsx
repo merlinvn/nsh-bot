@@ -23,6 +23,7 @@ export default function PlaygroundPage() {
   const [response, setResponse] = useState<string>("");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [tokenUsage, setTokenUsage] = useState<{ input_tokens: number; output_tokens: number } | null>(null);
+  const [toolCalls, setToolCalls] = useState<{ id: string; name: string; input: Record<string, unknown> }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const { data: prompts, isLoading: promptsLoading } = usePrompts();
@@ -105,6 +106,7 @@ export default function PlaygroundPage() {
       if (result.usage) {
         setTokenUsage(result.usage as { input_tokens: number; output_tokens: number });
       }
+      setToolCalls(result.tool_calls || []);
       setChatHistory((prev) => [...prev, { role: "assistant", content: result.content }]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -120,6 +122,7 @@ export default function PlaygroundPage() {
     setResponse("");
     setLatencyMs(null);
     setTokenUsage(null);
+    setToolCalls([]);
     setUserMessage("");
   };
 
@@ -295,6 +298,17 @@ export default function PlaygroundPage() {
                         <span className="font-medium">{tokenUsage.output_tokens.toLocaleString()}</span>
                       </div>
                     </>
+                  )}
+                  {toolCalls.length > 0 && (
+                    <div className="mt-3 pt-3 border-t space-y-2">
+                      <div className="text-xs font-medium text-orange-600">Tool Calls ({toolCalls.length})</div>
+                      {toolCalls.map((tc, i) => (
+                        <div key={i} className="bg-orange-50 border border-orange-200 rounded p-2 text-xs">
+                          <div className="font-medium text-orange-700">{tc.name}</div>
+                          <pre className="text-orange-600 mt-1 whitespace-pre-wrap">{JSON.stringify(tc.input, null, 2)}</pre>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               ) : (
