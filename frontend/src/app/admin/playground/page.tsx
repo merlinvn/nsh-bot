@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePrompts, usePrompt, usePlaygroundChat } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ export default function PlaygroundPage() {
   const { data: prompts, isLoading: promptsLoading } = usePrompts();
   const { data: promptDetail, isLoading: promptDetailLoading } = usePrompt(selectedPromptName);
   const chatMutation = usePlaygroundChat();
+  const chatHistoryRef = useRef<HTMLDivElement>(null);
 
   // When prompt changes, load active version's template
   useEffect(() => {
@@ -61,6 +62,13 @@ export default function PlaygroundPage() {
       setSystemPrompt(ver.template || promptDetail.template || "");
     }
   }, [selectedVersion, promptDetail, selectedPromptName]);
+
+  // Auto-scroll chat history to bottom when new message arrives
+  useEffect(() => {
+    if (chatHistoryRef.current) {
+      chatHistoryRef.current.scrollTop = chatHistoryRef.current.scrollHeight;
+    }
+  }, [chatHistory]);
 
   // Auto-select first prompt, or use default if none exist
   useEffect(() => {
@@ -232,7 +240,7 @@ export default function PlaygroundPage() {
               <CardHeader>
                 <CardTitle className="text-sm">Lịch sử trò chuyện</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3 max-h-64 overflow-y-auto">
+              <CardContent ref={chatHistoryRef} className="space-y-3 max-h-64 overflow-y-auto">
                 {chatHistory.map((msg, i) => (
                   <div
                     key={i}
