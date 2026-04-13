@@ -11,7 +11,7 @@ from app.models.admin_user import AdminUser
 from app.models.conversation import Conversation
 from app.models.message import Message
 
-router = APIRouter(prefix="/admin/analytics", tags=["admin:analytics"])
+router = APIRouter(prefix="/api/analytics", tags=["admin:analytics"])
 
 
 def _parse_date(date_str: str) -> datetime:

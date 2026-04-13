@@ -5,41 +5,57 @@
 
 ---
 
-## Overview
-
-NeoChatPlatform is a multi-phase AI conversation platform starting with Zalo OA (Vietnamese messaging platform).
-
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────────────────────────────┐
-                    │                    RabbitMQ                                       │
-Zalo Webhook ─────►│ conversation.process ──► ConversationWorker ──► llm.process ──┼──► LLMWorker ──► outbound.send ──► OutboundWorker ──► Zalo API
-                    │                                                       ▲          │
-                    └───────────────────────────────────────────────────────────┼──────────┘
-                                                                              │
-Admin Browser (Next.js) ──► Admin API (FastAPI /admin/*) ──► PostgreSQL ◄────┘
-                                       │                      │
-                                       │                 Redis ◄────┘
-                                       │            (sessions, pub/sub, heartbeat)
-                                       │
-                              ┌────────┴────────┐
-                              │  LLM Workers   │
-                              │  (llm.process) │
-                              └────────────────┘
+                         ┌─────────────────────────────────────────────────────────────┐
+                         │                    RabbitMQ                                       │
+Zalo Webhook ──────────►│ conversation.process ──► ConversationWorker ──► llm.process ──┼──► LLMWorker ──► outbound.send ──► OutboundWorker ──► Zalo API
+                         │                                                       ▲          │
+                         └───────────────────────────────────────────────────────────┼──────────┘
+                                                                               │
+Admin Browser (Next.js) ──► Caddy (reverse proxy) ──► Admin API (FastAPI /api/*)
+    │                                                          │                      │
+    │  /* (Next.js SPA)                                        │                 PostgreSQL ◄────┘
+    │                                                          │                      │
+    └──────────────────────────────────────────────────────────│                Redis ◄────┘
+                                                               │         (sessions, pub/sub, heartbeat)
+                                                               │
+                                                      ┌────────┴────────┐
+                                                      │  LLM Workers   │
+                                                      │  (llm.process) │
+                                                      └────────────────┘
 ```
+
+## Caddy Routing
+
+All external traffic goes through Caddy (ports 80/443):
+
+| Path | Destination | Purpose |
+|------|-------------|---------|
+| `/api/*` | `api:8000` | Admin API (FastAPI) |
+| `/auth/zalo/callback` | `api:8000` | Zalo OAuth callback |
+| `/webhooks/zalo` | `api:8000` | Zalo webhook receiver |
+| `/health` | `api:8000` | Health check |
+| `/internal/*` | `api:8000` | Internal API (protected) |
+| `/*` | `frontend:3000` | Next.js SPA (admin UI) |
 
 ## Docker Services
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| `api` | 8000 | FastAPI — webhook + admin endpoints |
-| `conversation-worker` | 8080 | Consumes `conversation.process`, routes to `llm.process` |
-| `llm-worker` | 8082 | Runs all LLM calls (Zalo, playground, evaluation) |
-| `outbound-worker` | 8081 | Sends messages to Zalo API |
-| `postgres` | 5432 | PostgreSQL 15 |
-| `redis` | 6379 | Redis 7 — sessions, pub/sub, heartbeat |
-| `rabbitmq` | 5672, 15672 | RabbitMQ 3.12 — message queues |
+| `api` | internal | FastAPI — webhook + admin endpoints |
+| `conversation-worker` | internal | Consumes `conversation.process`, routes to `llm.process` |
+| `llm-worker` | internal | Runs all LLM calls (Zalo, playground, evaluation) |
+| `outbound-worker` | internal | Sends messages to Zalo API |
+| `postgres` | internal | PostgreSQL 15 |
+| `redis` | internal | Redis 7 — sessions, pub/sub, heartbeat |
+| `rabbitmq` | 15672 (mgmt) | RabbitMQ 3.12 — message queues |
+| `caddy` | 80, 443 | Reverse proxy (public) |
+| `frontend` | internal | Next.js admin SPA |
+
+**Dev-only ports** (via `docker-compose.override.yml`):
+- `postgres:5432`, `redis:6379`, `api:8000`, `conversation-worker:8080`, `outbound-worker:8081`, `llm-worker:8082`, `frontend:3000`, `rabbitmq:5672`
 
 ---
 
@@ -56,7 +72,7 @@ Admin Browser (Next.js) ──► Admin API (FastAPI /admin/*) ──► Postgre
 
 ## Workers
 
-### ConversationWorker (port 8080)
+### ConversationWorker
 
 - **Queue consumed:** `conversation.process` (prefetch=1)
 - **Role:** Message routing — does NOT call LLM directly
@@ -70,7 +86,7 @@ Admin Browser (Next.js) ──► Admin API (FastAPI /admin/*) ──► Postgre
   7. Publish to `outbound.send`
 - **Heartbeat key:** `worker:heartbeat:conversation-worker`
 
-### LLMWorker (port 8082)
+### LLMWorker
 
 - **Queue consumed:** `llm.process` (prefetch=5)
 - **Role:** All LLM computation
@@ -78,18 +94,13 @@ Admin Browser (Next.js) ──► Admin API (FastAPI /admin/*) ──► Postgre
 
 | Channel | Source | Processing | Response |
 |---------|--------|------------|----------|
-| `playground` | API (`/admin/playground/chat`) | `AgentRunner` + tools | Redis pub/sub |
-| `evaluation` | API (`/admin/evaluations/{id}/run`) | `AgentRunner` + LLM judge | DB update + Redis pub/sub |
+| `playground` | API (`/api/playground/chat`) | `AgentRunner` + tools | Redis pub/sub |
+| `evaluation` | API (`/api/evaluations/{id}/run`) | `AgentRunner` + LLM judge | DB update + Redis pub/sub |
 | `zalo` | ConversationWorker | `AgentRunner` + tools + quote subagent | Redis pub/sub + DB update |
 
-- **For `zalo` channel specifically:**
-  - Runs `AgentRunner` with full tool call recording (own `db_session`)
-  - Intercepts `delegate_to_quote_agent` — runs quote subagent
-  - Updates outbound `Message` in DB with text/latency/token_usage
-  - Publishes response to Redis for ConversationWorker
 - **Heartbeat key:** `worker:heartbeat:llm-worker`
 
-### OutboundWorker (port 8081)
+### OutboundWorker
 
 - **Queue consumed:** `outbound.send` (prefetch=5)
 - **Role:** Delivers messages to Zalo API with retry
@@ -114,14 +125,14 @@ All LLM calls go through `llm.process` with a `channel` field that determines re
 
 ### `playground` Channel
 
-- **API endpoint:** `POST /admin/playground/chat`
+- **API endpoint:** `POST /api/playground/chat`
 - **Payload:** `system_prompt`, `messages` (history), `new_message`
 - **Worker:** `LLMProcessor._process_playground()` — runs `AgentRunner`, publishes to Redis `llm:response:{request_id}`
 - **Response:** `{text, tool_calls, token_usage, latency_ms, error}`
 
 ### `evaluation` Channel
 
-- **API endpoint:** `POST /admin/evaluations/{id}/run`
+- **API endpoint:** `POST /api/evaluations/{id}/run`
 - **Payload:** `evaluation_id`, `tc_id`, `question`, `expected_answer`, `prompt_name`
 - **Worker:** `LLMProcessor._process_evaluation()` — runs `AgentRunner` + LLM judge, updates DB, publishes to Redis
 - **Response:** `{text, passed, judgment, latency_ms, error}`
@@ -138,94 +149,94 @@ All LLM calls go through `llm.process` with a `channel` field that determines re
 
 ## Admin API Endpoints
 
-All `/admin/*` routes require session cookie authentication (except login).
+All `/api/*` routes require session cookie authentication (except login).
 
 ### Auth
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/admin/auth/login` | POST | Login with username/password |
-| `/admin/auth/logout` | POST | Logout (clear session) |
-| `/admin/auth/me` | GET | Get current user info |
-| `/admin/auth/password` | POST | Change own password |
+| `/api/auth/login` | POST | Login with username/password |
+| `/api/auth/logout` | POST | Logout (clear session) |
+| `/api/auth/me` | GET | Get current user info |
+| `/api/auth/password` | POST | Change own password |
 
 ### Prompts
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/admin/prompts` | GET | List all prompts |
-| `/admin/prompts` | POST | Create new prompt |
-| `/admin/prompts/{name}` | GET | Get prompt detail |
-| `/admin/prompts/{name}` | PUT | Update prompt (new version) |
-| `/admin/prompts/{name}` | DELETE | Delete prompt |
-| `/admin/prompts/{name}/versions` | POST | Create new version |
-| `/admin/prompts/{name}/activate` | POST | Activate a version |
-| `/admin/prompts/{name}/versions` | GET | List all versions |
+| `/api/prompts` | GET | List all prompts |
+| `/api/prompts` | POST | Create new prompt |
+| `/api/prompts/{name}` | GET | Get prompt detail |
+| `/api/prompts/{name}` | PUT | Update prompt (new version) |
+| `/api/prompts/{name}` | DELETE | Delete prompt |
+| `/api/prompts/{name}/versions` | POST | Create new version |
+| `/api/prompts/{name}/activate` | POST | Activate a version |
+| `/api/prompts/{name}/versions` | GET | List all versions |
 
 ### Conversations
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/admin/conversations` | GET | List conversations (paginated) |
-| `/admin/conversations/{id}` | GET | Get conversation + messages |
-| `/admin/conversations/{id}/replay` | POST | Dry-run replay (no Zalo delivery) |
-| `/admin/conversations/stats` | GET | Conversation statistics |
-| `/admin/conversations/{id}/messages` | GET | List messages in conversation |
+| `/api/conversations` | GET | List conversations (paginated) |
+| `/api/conversations/{id}` | GET | Get conversation + messages |
+| `/api/conversations/{id}/replay` | POST | Dry-run replay (no Zalo delivery) |
+| `/api/conversations/stats` | GET | Conversation statistics |
+| `/api/conversations/{id}/messages` | GET | List messages in conversation |
 
 ### Analytics
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/admin/analytics/overview` | GET | Dashboard overview |
-| `/admin/analytics/messages` | GET | Message volume over time |
-| `/admin/analytics/latency` | GET | LLM latency percentiles |
-| `/admin/analytics/tools` | GET | Tool usage breakdown |
-| `/admin/analytics/fallbacks` | GET | Fallback rates |
-| `/admin/analytics/tokens` | GET | Token usage summary |
+| `/api/analytics/overview` | GET | Dashboard overview |
+| `/api/analytics/messages` | GET | Message volume over time |
+| `/api/analytics/latency` | GET | LLM latency percentiles |
+| `/api/analytics/tools` | GET | Tool usage breakdown |
+| `/api/analytics/fallbacks` | GET | Fallback rates |
+| `/api/analytics/tokens` | GET | Token usage summary |
 
 ### Playground
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/admin/playground/chat` | POST | Chat via llm.process queue |
-| `/admin/playground/complete` | POST | Single completion test |
-| `/admin/playground/benchmark` | POST | Run benchmark |
-| `/admin/playground/benchmark/{id}` | GET | Get benchmark result |
-| `/admin/playground/benchmark/{id}/results` | GET | Get benchmark detailed results |
-| `/admin/playground/models` | GET | List available models |
+| `/api/playground/chat` | POST | Chat via llm.process queue |
+| `/api/playground/complete` | POST | Single completion test |
+| `/api/playground/benchmark` | POST | Run benchmark |
+| `/api/playground/benchmark/{id}` | GET | Get benchmark result |
+| `/api/playground/benchmark/{id}/results` | GET | Get benchmark detailed results |
+| `/api/playground/models` | GET | List available models |
 
 ### Evaluations
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/admin/evaluations` | GET | List all evaluations |
-| `/admin/evaluations` | POST | Create new evaluation |
-| `/admin/evaluations/{id}` | GET | Get evaluation with test cases |
-| `/admin/evaluations/{id}` | DELETE | Delete evaluation |
-| `/admin/evaluations/{id}/test-cases` | POST | Add test case |
-| `/admin/evaluations/{id}/test-cases/{tc_id}` | DELETE | Delete test case |
-| `/admin/evaluations/{id}/run` | POST | Run evaluation (via llm.process queue) |
+| `/api/evaluations` | GET | List all evaluations |
+| `/api/evaluations` | POST | Create new evaluation |
+| `/api/evaluations/{id}` | GET | Get evaluation with test cases |
+| `/api/evaluations/{id}` | DELETE | Delete evaluation |
+| `/api/evaluations/{id}/test-cases` | POST | Add test case |
+| `/api/evaluations/{id}/test-cases/{tc_id}` | DELETE | Delete test case |
+| `/api/evaluations/{id}/run` | POST | Run evaluation (via llm.process queue) |
 
 ### Zalo Tokens
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/admin/zalo-tokens/status` | GET | Current token status |
-| `/admin/zalo-tokens/pkce` | POST | Generate PKCE pair |
-| `/admin/zalo-tokens/refresh` | POST | Refresh access token |
-| `/admin/zalo-tokens` | DELETE | Revoke tokens |
+| `/api/zalo-tokens/status` | GET | Current token status |
+| `/api/zalo-tokens/pkce` | POST | Generate PKCE pair |
+| `/api/zalo-tokens/refresh` | POST | Refresh access token |
+| `/api/zalo-tokens` | DELETE | Revoke tokens |
 
 ### Monitoring
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/admin/monitoring/health` | GET | Detailed health check |
-| `/admin/monitoring/health-detail` | GET | Per-service health with latency |
-| `/admin/monitoring/metrics` | GET | JSON metrics for UI |
-| `/admin/monitoring/metrics-trend` | GET | Current + previous metrics for trend |
-| `/admin/monitoring/workers` | GET | Worker status (alive/stale/dead) |
-| `/admin/monitoring/queues` | GET | Queue depths, rates, oldest message age |
-| `/admin/monitoring/queues/{vhost}/{queue_name}/messages` | GET | Peek messages in queue (without consuming) |
+| `/api/monitoring/health` | GET | Detailed health check |
+| `/api/monitoring/health-detail` | GET | Per-service health with latency |
+| `/api/monitoring/metrics` | GET | JSON metrics for UI |
+| `/api/monitoring/metrics-trend` | GET | Current + previous metrics for trend |
+| `/api/monitoring/workers` | GET | Worker status (alive/stale/dead) |
+| `/api/monitoring/queues` | GET | Queue depths, rates, oldest message age |
+| `/api/monitoring/queues/{vhost}/{queue_name}/messages` | GET | Peek messages in queue (without consuming) |
 
 ---
 

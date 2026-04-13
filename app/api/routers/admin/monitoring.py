@@ -13,7 +13,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message
 from app.workers.shared.health import HealthStatus, check_all
 
-router = APIRouter(prefix="/admin/monitoring", tags=["admin:monitoring"])
+router = APIRouter(prefix="/api/monitoring", tags=["admin:monitoring"])
 
 
 @router.get("/health")

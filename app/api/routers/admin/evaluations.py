@@ -13,7 +13,7 @@ from app.models.admin_user import AdminUser
 from app.models.evaluation import EvaluationTestCase, PromptEvaluation
 
 
-router = APIRouter(prefix="/admin/evaluations", tags=["admin:evaluations"])
+router = APIRouter(prefix="/api/evaluations", tags=["admin:evaluations"])
 
 
 # ---------------------------------------------------------------------------

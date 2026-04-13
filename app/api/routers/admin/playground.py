@@ -17,7 +17,7 @@ from app.models.admin_user import AdminUser
 from app.models.benchmark_result import BenchmarkItem, BenchmarkResult
 from app.workers.conversation.llm import create_llm_client
 
-router = APIRouter(prefix="/admin/playground", tags=["admin:playground"])
+router = APIRouter(prefix="/api/playground", tags=["admin:playground"])
 
 
 @router.post("/chat")

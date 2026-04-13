@@ -16,7 +16,7 @@ from app.models.admin_user import AdminUser
 from app.models.zalo_token import ZaloToken
 from app.workers.shared.zalo_token_manager import get_zalo_token_manager
 
-router = APIRouter(prefix="/admin/zalo-tokens", tags=["admin:zalo-tokens"])
+router = APIRouter(prefix="/api/zalo-tokens", tags=["admin:zalo-tokens"])
 
 
 def _generate_code_verifier() -> str:

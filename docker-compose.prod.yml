@@ -12,6 +12,7 @@ x-common-env: &common-env
   ZALO_ACCESS_TOKEN: ${ZALO_ACCESS_TOKEN:-}
   ZALO_WEBHOOK_SECRET: ${ZALO_WEBHOOK_SECRET:-}
   ZALO_OA_ID: ${ZALO_OA_ID:-}
+  ZALO_CALLBACK_URL: ${ZALO_CALLBACK_URL:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
   LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
@@ -19,12 +20,17 @@ x-common-env: &common-env
   OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
   OPENAI_MODEL: ${OPENAI_MODEL:-llama3.2}
   INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
-  CORS_ORIGINS: ${CORS_ORIGINS:-*}
+  CORS_ORIGINS: ${CORS_ORIGINS:-https://nsh.nguyentd.com}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-100}
   CONTEXT_WINDOW_SIZE: ${CONTEXT_WINDOW_SIZE:-10}
   MAX_TOOL_CALLS: ${MAX_TOOL_CALLS:-2}
   LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-15}
+  ADMIN_SESSION_TTL_SECONDS: ${ADMIN_SESSION_TTL_SECONDS:-86400}
+  ADMIN_BCRYPT_ROUNDS: ${ADMIN_BCRYPT_ROUNDS:-12}
+  ADMIN_MAX_LOGIN_ATTEMPTS: ${ADMIN_MAX_LOGIN_ATTEMPTS:-5}
+  ADMIN_LOCKOUT_MINUTES: ${ADMIN_LOCKOUT_MINUTES:-15}
+  ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE: ${ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE:-10}
 
 x-worker-env: &worker-env
   <<: *common-env
@@ -83,21 +89,24 @@ services:
           cpus: "0.25"
           memory: 256M
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 60s
 
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --workers 4
+    env_file:
+      - .env
     environment:
       <<: *common-env
       LOG_LEVEL: WARNING
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      ADMIN_CORS_ORIGINS: ${CORS_ORIGINS:-}
     deploy:
       resources:
         limits:
@@ -126,6 +135,8 @@ services:
       context: .
       dockerfile: Dockerfile.conversation-worker
     command: python -m app.workers.conversation.main
+    env_file:
+      - .env
     environment:
       <<: *worker-env
       WORKER_METRICS_PORT: "8080"
@@ -156,6 +167,8 @@ services:
       context: .
       dockerfile: Dockerfile.outbound-worker
     command: python -m app.workers.outbound.main
+    env_file:
+      - .env
     environment:
       <<: *worker-env
       WORKER_METRICS_PORT: "8081"
@@ -184,6 +197,8 @@ services:
       context: .
       dockerfile: Dockerfile.llm-worker
     command: python -m app.workers.llm.main
+    env_file:
+      - .env
     environment:
       <<: *worker-env
       WORKER_METRICS_PORT: "8082"
@@ -210,3 +225,48 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  frontend:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    environment:
+      NEXT_PUBLIC_API_URL: https://nsh.nguyentd.com
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  caddy:
+    image: caddy:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  neochat_db:
+  neochat_redis:
+  neochat_rabbitmq:
+  caddy_data:
+  caddy_config:

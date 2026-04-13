@@ -26,12 +26,12 @@ export default function PromptDetailPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["prompt", name],
-    queryFn: () => api.get<{ name: string; description: string | null; active_version: number }>(`/admin/prompts/${name}`),
+    queryFn: () => api.get<{ name: string; description: string | null; active_version: number }>(`/api/prompts/${name}`),
   });
 
   const { data: versions } = useQuery({
     queryKey: ["prompt-versions", name],
-    queryFn: () => api.get<PromptVersion[]>(`/admin/prompts/${name}/versions`),
+    queryFn: () => api.get<PromptVersion[]>(`/api/prompts/${name}/versions`),
   });
 
   const updatePrompt = useUpdatePrompt(name);

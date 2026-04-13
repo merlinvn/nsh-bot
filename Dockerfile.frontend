@@ -1,0 +1,28 @@
+FROM node:20
+
+WORKDIR /app
+
+# Install curl for healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Copy package files and do a fresh install with correct platform
+COPY frontend/package.json frontend/package-lock.json* ./
+# Remove any existing node_modules to avoid cached wrong-platform binaries
+RUN rm -rf /app/node_modules
+
+# Install with explicit platform so lightningcss binaries resolve correctly
+RUN npm install --platform=linux/amd64 --arch=x64 --force
+
+# Install the GNU variant (glibc) which works with Debian node:20 image
+# (musl variant needs musl libc which node:20 doesn't have)
+RUN npm install --platform=linux/amd64 --arch=x64 lightningcss-linux-x64-gnu --force
+
+# Copy source
+COPY frontend/ ./
+
+# Build for production
+RUN npm run build
+
+# Production start
+EXPOSE 3000
+CMD ["npm", "start"]

@@ -7,7 +7,7 @@ from app.api.dependencies import get_current_admin_user, get_db
 from app.models.admin_user import AdminUser
 from app.models.zalo_user import ZaloUser
 
-router = APIRouter(prefix="/admin/zalo-users", tags=["admin:zalo-users"])
+router = APIRouter(prefix="/api/zalo-users", tags=["admin:zalo-users"])
 
 
 @router.get("")

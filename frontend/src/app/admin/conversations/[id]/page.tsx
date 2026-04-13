@@ -161,14 +161,14 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
 
     Promise.all([
       api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
-        `/admin/conversations/${id}/messages?limit=${PAGE_SIZE}`
+        `/api/conversations/${id}/messages?limit=${PAGE_SIZE}`
       ),
       api.get<{
         external_user_id: string;
         user_display_name: string | null;
         user_avatar: string | null;
         user_id_by_app: string | null;
-      }>(`/admin/conversations/${id}`),
+      }>(`/api/conversations/${id}`),
     ]).then(([msgData, conv]) => {
       setMessages(msgData.messages);
       setHasMore(msgData.has_more);
@@ -187,7 +187,7 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
     setIsFetching(true);
     try {
       const data = await api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
-        `/admin/conversations/${id}/messages?limit=${PAGE_SIZE}&before=${encodeURIComponent(nextBefore)}`
+        `/api/conversations/${id}/messages?limit=${PAGE_SIZE}&before=${encodeURIComponent(nextBefore)}`
       );
       // Prepend because each page is older than the previous one
       setMessages((prev) => [...data.messages, ...prev]);
@@ -228,7 +228,7 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
   };
 
   const replayMutation = useMutation({
-    mutationFn: () => api.post(`/admin/conversations/${id}/replay`),
+    mutationFn: () => api.post(`/api/conversations/${id}/replay`),
     onSuccess: () => toast.success("Replay queued. Check back for results."),
     onError: (err: unknown) => {
       toast.error(`Replay failed: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -280,7 +280,7 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
           <span className="text-sm text-gray-500">{messages.length} msgs</span>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => window.open("/admin/users", "_blank")}>
+          <Button variant="outline" size="sm" onClick={() => window.open("/api/users", "_blank")}>
             <User className="mr-1 h-4 w-4" />View User
           </Button>
           <Button

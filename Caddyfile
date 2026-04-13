@@ -1,0 +1,32 @@
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	reverse_proxy /api/* http://api:8000
+	reverse_proxy /auth/zalo/callback http://api:8000
+	reverse_proxy /webhooks/zalo http://api:8000
+	reverse_proxy /health http://api:8000
+	reverse_proxy /internal http://api:8000
+	reverse_proxy /internal/* http://api:8000
+	reverse_proxy /* http://frontend:3000
+
+	log {
+		output stdout
+	}
+}
+
+:443 {
+	reverse_proxy /api/* http://api:8000
+	reverse_proxy /auth/zalo/callback http://api:8000
+	reverse_proxy /webhooks/zalo http://api:8000
+	reverse_proxy /health http://api:8000
+	reverse_proxy /internal http://api:8000
+	reverse_proxy /internal/* http://api:8000
+	reverse_proxy /* http://frontend:3000
+
+	log {
+		output stdout
+	}
+}

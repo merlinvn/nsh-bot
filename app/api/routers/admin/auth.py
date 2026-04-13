@@ -13,7 +13,7 @@ from app.api.schemas.admin import LoginRequest, LoginResponse, MeResponse, Passw
 from app.core.session import LoginRateLimiter, SessionStore
 from app.models.admin_user import AdminUser
 
-router = APIRouter(prefix="/admin/auth", tags=["admin:auth"])
+router = APIRouter(prefix="/api/auth", tags=["admin:auth"])
 
 
 @router.post("/login", response_model=LoginResponse)

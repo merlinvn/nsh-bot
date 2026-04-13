@@ -19,7 +19,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    api.get<AdminUser>("/admin/auth/me")
+    api.get<AdminUser>("/api/auth/me")
       .then(setUser)
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false));
@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string) => {
     const res = await api.post<{ ok: boolean; user: AdminUser; csrf_token: string }>(
-      "/admin/auth/login",
+      "/api/auth/login",
       { username, password }
     );
     setUser(res.user);
@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await api.post("/admin/auth/logout");
+    await api.post("/api/auth/logout");
     setUser(null);
     setCsrfToken(null);
   };

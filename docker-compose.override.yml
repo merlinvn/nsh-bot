@@ -1,0 +1,40 @@
+# docker-compose.override.yml
+# Auto-merged by docker-compose when running `docker-compose up`
+# For non-debug use: docker-compose -f docker-compose.dev.yml up (no override)
+# For debug use: docker-compose up (with override)
+#
+# To disable debug ports: rename this file (e.g., mv docker-compose.override.yml docker-compose.override.yml.disabled)
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  api:
+    ports:
+      - "8000:8000"
+
+  conversation-worker:
+    ports:
+      - "8080:8080"
+
+  outbound-worker:
+    ports:
+      - "8081:8081"
+
+  llm-worker:
+    ports:
+      - "8082:8082"
+
+  frontend:
+    ports:
+      - "3000:3000"

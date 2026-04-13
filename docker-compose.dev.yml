@@ -19,7 +19,7 @@ x-common-env: &common-env
   OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
   OPENAI_MODEL: ${OPENAI_MODEL:-llama3.2}
   INTERNAL_API_KEY: ${INTERNAL_API_KEY:-}
-  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://nsh.nguyentd.com,https://nsh.nguyentd.com}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-100}
   CONTEXT_WINDOW_SIZE: ${CONTEXT_WINDOW_SIZE:-10}
@@ -42,8 +42,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-neochat}
       POSTGRES_USER: ${POSTGRES_USER:-neochat}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
-    ports:
-      - "5432:5432"
     volumes:
       - neochat_dev_db:/var/lib/postgresql/data
     healthcheck:
@@ -55,8 +53,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - neochat_dev_redis:/data
     healthcheck:
@@ -72,7 +68,6 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     ports:
-      - "5672:5672"
       - "15672:15672"
     volumes:
       - neochat_dev_rabbitmq:/var/lib/rabbitmq
@@ -88,8 +83,6 @@ services:
       context: .
       dockerfile: Dockerfile.api
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:
@@ -116,8 +109,6 @@ services:
       context: .
       dockerfile: Dockerfile.conversation-worker
     command: python -m app.workers.conversation.main
-    ports:
-      - "8080:8080"
     env_file:
       - .env
     environment:
@@ -142,8 +133,6 @@ services:
       context: .
       dockerfile: Dockerfile.outbound-worker
     command: python -m app.workers.outbound.main
-    ports:
-      - "8081:8081"
     env_file:
       - .env
     environment:
@@ -166,8 +155,6 @@ services:
       context: .
       dockerfile: Dockerfile.llm-worker
     command: python -m app.workers.llm.main
-    ports:
-      - "8082:8082"
     env_file:
       - .env
     environment:
@@ -189,7 +176,46 @@ services:
       retries: 3
       start_period: 30s
 
+  frontend:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    command: npm start
+    environment:
+      NEXT_PUBLIC_API_URL: https://nsh.nguyentd.com
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  caddy:
+    image: caddy:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - frontend
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 volumes:
   neochat_dev_db:
   neochat_dev_redis:
   neochat_dev_rabbitmq:
+  caddy_data:
+  caddy_config:

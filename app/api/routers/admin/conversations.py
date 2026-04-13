@@ -13,7 +13,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.zalo_user import ZaloUser
 
-router = APIRouter(prefix="/admin/conversations", tags=["admin:conversations"])
+router = APIRouter(prefix="/api/conversations", tags=["admin:conversations"])
 
 
 @router.get("")

@@ -9,7 +9,7 @@ from app.api.schemas.prompt import PromptCreate, PromptResponse, PromptUpdate, V
 from app.models.admin_user import AdminUser
 from app.models.prompt import Prompt
 
-router = APIRouter(prefix="/admin/prompts", tags=["admin:prompts"])
+router = APIRouter(prefix="/api/prompts", tags=["admin:prompts"])
 
 
 @router.get("")
