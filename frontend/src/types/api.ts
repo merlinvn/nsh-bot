@@ -12,6 +12,8 @@ export interface LoginResponse {
 export interface Conversation {
   id: string;
   external_user_id: string;
+  user_display_name: string | null;
+  user_avatar: string | null;
   status: string;
   created_at: string;
 }
@@ -77,6 +79,23 @@ export interface ZaloTokenStatus {
   expires_at: string | null;
   refreshed_at?: string;
   oa_id?: string;
+}
+
+export interface ZaloUser {
+  id: string;
+  user_id: string;
+  display_name: string | null;
+  user_alias: string | null;
+  avatar: string | null;
+  user_is_follower: boolean;
+  user_last_interaction_date: string | null;
+  shared_info: Record<string, unknown> | null;
+  tags_and_notes_info: Record<string, unknown> | null;
+  user_external_id: string | null;
+  user_id_by_app: string | null;
+  is_sensitive: boolean | null;
+  last_fetched_at: string | null;
+  created_at: string;
 }
 
 export interface MonitoringHealth {

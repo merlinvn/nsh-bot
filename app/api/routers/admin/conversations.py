@@ -1,4 +1,5 @@
 """Admin conversations management router."""
+import uuid as uuid_lib
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -10,6 +11,7 @@ from app.models.delivery_attempt import DeliveryAttempt
 from app.models.tool_call import ToolCall
 from app.models.conversation import Conversation
 from app.models.message import Message
+from app.models.zalo_user import ZaloUser
 
 router = APIRouter(prefix="/admin/conversations", tags=["admin:conversations"])
 
@@ -28,7 +30,10 @@ async def list_conversations(
     _: AdminUser = Depends(get_current_admin_user),
 ):
     """List conversations with pagination and filtering."""
-    query = select(Conversation)
+    query = (
+        select(Conversation, ZaloUser.display_name, ZaloUser.avatar)
+        .outerjoin(ZaloUser, Conversation.external_user_id == ZaloUser.user_id)
+    )
     if user_id:
         query = query.where(Conversation.external_user_id == user_id)
     if status:
@@ -38,7 +43,7 @@ async def list_conversations(
     query = query.order_by(order_col)
     query = query.offset((page - 1) * size).limit(size)
     result = await db.execute(query)
-    convs = result.scalars().all()
+    rows = result.all()
 
     # Count total
     count_query = select(func.count(Conversation.id))
@@ -53,10 +58,12 @@ async def list_conversations(
             {
                 "id": str(c.id),
                 "external_user_id": c.external_user_id,
+                "user_display_name": display_name,
+                "user_avatar": avatar,
                 "status": c.status,
                 "created_at": c.created_at.isoformat(),
             }
-            for c in convs
+            for c, display_name, avatar in rows
         ],
         "total": total,
         "page": page,
@@ -179,19 +186,25 @@ async def get_conversation_messages(
         "has_more": has_more,
         "next_before": next_before,
     }
+@router.get("/{conversation_id}")
 async def get_conversation(
     conversation_id: str,
     db: AsyncSession = Depends(get_db),
     _: AdminUser = Depends(get_current_admin_user),
 ):
     """Get conversation with messages and tool calls."""
-    conv_result = await db.execute(select(Conversation).where(Conversation.id == conversation_id))
-    conv = conv_result.scalar_one_or_none()
-    if not conv:
+    conv_result = await db.execute(
+        select(Conversation, ZaloUser.display_name, ZaloUser.avatar, ZaloUser.user_id_by_app)
+        .outerjoin(ZaloUser, Conversation.external_user_id == ZaloUser.user_id)
+        .where(Conversation.id == uuid_lib.UUID(conversation_id))
+    )
+    conv_row = conv_result.first()
+    if not conv_row:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    conv, user_display_name, user_avatar, user_id_by_app = conv_row
 
     messages_result = await db.execute(
-        select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at)
+        select(Message).where(Message.conversation_id == uuid_lib.UUID(conversation_id)).order_by(Message.created_at)
     )
     messages = messages_result.scalars().all()
 
@@ -236,6 +249,9 @@ async def get_conversation(
     return {
         "id": str(conv.id),
         "external_user_id": conv.external_user_id,
+        "user_display_name": user_display_name,
+        "user_avatar": user_avatar,
+        "user_id_by_app": user_id_by_app,
         "status": conv.status,
         "created_at": conv.created_at.isoformat(),
         "messages": [

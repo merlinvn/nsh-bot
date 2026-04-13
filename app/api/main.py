@@ -20,6 +20,7 @@ from app.api.routers.admin import (
     playground_router,
     prompts_router,
     zalo_tokens_router,
+    zalo_users_router,
 )
 from app.core.rabbitmq import close_rabbitmq, get_rabbitmq_channel
 from app.core.redis import close_redis_client
@@ -96,6 +97,7 @@ app.include_router(conversations_router)
 app.include_router(analytics_router)
 app.include_router(playground_router)
 app.include_router(zalo_tokens_router)
+app.include_router(zalo_users_router)
 app.include_router(monitoring_router)
 
 

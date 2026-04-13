@@ -313,7 +313,7 @@ async def activate_prompt_version(
             detail={"code": "VERSION_NOT_FOUND", "message": f"Version '{request.version}' not found in prompt '{request.name}'."},
         )
 
-    prompt.active_version = request.version
+    prompt.active_version = str(request.version)
     await db.commit()
 
     logger.info(

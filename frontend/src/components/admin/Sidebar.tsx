@@ -9,6 +9,7 @@ import {
   Play,
   Key,
   Activity,
+  Users,
 } from "lucide-react";
 
 const navItems = [
@@ -17,6 +18,7 @@ const navItems = [
   { href: "/admin/prompts", label: "Prompts", icon: FileText },
   { href: "/admin/playground", label: "Playground", icon: Play },
   { href: "/admin/tokens", label: "Tokens", icon: Key },
+  { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/monitoring", label: "Monitoring", icon: Activity },
 ];
 

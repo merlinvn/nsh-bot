@@ -3,13 +3,19 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { useUpdatePrompt, useActivatePromptVersion } from "@/hooks/useApi";
+import { useUpdatePrompt, useActivatePromptVersion, useCreatePromptVersion } from "@/hooks/useApi";
 import { PromptForm } from "@/components/forms/PromptForm";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import type { PromptVersion } from "@/types/api";
+
+const PROMPT_TYPE_META: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
+  system: { label: "System Prompt", variant: "default" },
+  tool_policy: { label: "Tool Policy", variant: "secondary" },
+  fallback: { label: "Fallback", variant: "outline" },
+};
 
 export default function PromptDetailPage() {
   const params = useParams();
@@ -30,6 +36,7 @@ export default function PromptDetailPage() {
 
   const updatePrompt = useUpdatePrompt(name);
   const activateVersion = useActivatePromptVersion(name);
+  const createVersion = useCreatePromptVersion(name);
 
   const handleUpdate = async (template: string) => {
     try {
@@ -50,20 +57,40 @@ export default function PromptDetailPage() {
     }
   };
 
+  const handleAddBlankVersion = async () => {
+    try {
+      await createVersion.mutateAsync({});
+      toast.success("Blank version added");
+    } catch {
+      toast.error("Failed to add blank version");
+    }
+  };
+
+  const typeMeta = PROMPT_TYPE_META[name];
+  const activeTemplate = versions?.find(v => v.active)?.template ?? "";
+
   if (isLoading) return <div>Loading...</div>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">{name}</h1>
-          {data?.description && (
-            <p className="text-gray-500 mt-1">{data.description}</p>
-          )}
+          {typeMeta && <Badge variant={typeMeta.variant}>{typeMeta.label}</Badge>}
         </div>
-        <Button onClick={() => setIsEditing(!isEditing)} variant={isEditing ? "outline" : "default"}>
-          {isEditing ? "Cancel" : "Edit Template"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAddBlankVersion}
+            disabled={createVersion.isPending}
+          >
+            Add Blank Version
+          </Button>
+          <Button onClick={() => setIsEditing(!isEditing)} variant={isEditing ? "outline" : "default"}>
+            {isEditing ? "Cancel" : "Edit Template"}
+          </Button>
+        </div>
       </div>
 
       {isEditing && (
@@ -74,7 +101,7 @@ export default function PromptDetailPage() {
           <CardContent>
             <PromptForm
               onSubmit={handleUpdate}
-              initialValue={versions?.find(v => v.active)?.template}
+              initialValue={activeTemplate}
               isLoading={updatePrompt.isPending}
             />
           </CardContent>

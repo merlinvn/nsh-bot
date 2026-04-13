@@ -6,6 +6,7 @@ import type {
   AnalyticsOverview,
   Prompt,
   ZaloTokenStatus,
+  ZaloUser,
   MonitoringHealth,
   MonitoringHealthDetail,
   MonitoringMetrics,
@@ -259,6 +260,23 @@ export function useRevokeToken() {
   return useMutation({
     mutationFn: () => api.delete("/admin/zalo-tokens"),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["zalo-token-status"] }),
+  });
+}
+
+// Zalo Users
+export function useZaloUsers() {
+  return useQuery<ZaloUser[]>({
+    queryKey: ["zalo-users"],
+    queryFn: () => api.get("/admin/zalo-users"),
+    refetchInterval: 60000,
+  });
+}
+
+export function useZaloUser(userId: string) {
+  return useQuery<ZaloUser>({
+    queryKey: ["zalo-user", userId],
+    queryFn: () => api.get(`/admin/zalo-users/${userId}`),
+    enabled: !!userId,
   });
 }
 

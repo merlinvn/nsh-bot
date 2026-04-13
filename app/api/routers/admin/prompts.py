@@ -30,7 +30,6 @@ async def create_prompt(body: PromptCreate, db: AsyncSession = Depends(get_db)):
     prompt = Prompt(
         name=body.name,
         template=body.template,
-        description=body.description or "",
         active_version="1",
         versions=[{"version": 1, "template": body.template}],
     )
@@ -57,8 +56,8 @@ async def update_prompt(name: str, body: PromptUpdate, db: AsyncSession = Depend
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    # Parse current versions
-    current_versions = prompt.versions or []
+    # Parse current versions — copy to avoid mutating loaded list
+    current_versions = list(prompt.versions or [])
     max_version = max((v.get("version", 0) for v in current_versions), default=0)
     new_version = max_version + 1
 
@@ -93,7 +92,7 @@ async def create_version(name: str, body: VersionCreate, db: AsyncSession = Depe
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    current_versions = prompt.versions or []
+    current_versions = list(prompt.versions or [])
     max_version = max((v.get("version", 0) for v in current_versions), default=0)
     new_version = max_version + 1
 
@@ -113,7 +112,7 @@ async def activate_version(name: str, body: VersionCreate, db: AsyncSession = De
         raise HTTPException(status_code=404, detail="Prompt not found")
 
     # Check version exists
-    current_versions = prompt.versions or []
+    current_versions = list(prompt.versions or [])
     if not any(v.get("version") == body.version for v in current_versions):
         raise HTTPException(status_code=404, detail="Version not found")
 

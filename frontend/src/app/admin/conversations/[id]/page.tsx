@@ -9,6 +9,7 @@ import {
   RotateCcw, CheckCircle, XCircle, Clock, Wrench,
   ChevronDown, ChevronRight, ArrowDown, Loader2,
   ChevronsUpDown,
+  User,
 } from "lucide-react";
 import type { Message, ToolCall, DeliveryAttempt } from "@/types/api";
 
@@ -144,6 +145,12 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
   const [hasMore, setHasMore] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [convInfo, setConvInfo] = useState<{
+    external_user_id: string;
+    user_display_name: string | null;
+    user_avatar: string | null;
+    user_id_by_app: string | null;
+  } | null>(null);
   const initialized = useRef(false);
 
   // Initial load - only runs once per conversation
@@ -152,12 +159,26 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
     initialized.current = true;
     setIsInitialLoading(true);
 
-    api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
-      `/admin/conversations/${id}/messages?limit=${PAGE_SIZE}`
-    ).then((data) => {
-      setMessages(data.messages);
-      setHasMore(data.has_more);
-      setNextBefore(data.next_before);
+    Promise.all([
+      api.get<{ messages: Message[]; has_more: boolean; next_before: string | null }>(
+        `/admin/conversations/${id}/messages?limit=${PAGE_SIZE}`
+      ),
+      api.get<{
+        external_user_id: string;
+        user_display_name: string | null;
+        user_avatar: string | null;
+        user_id_by_app: string | null;
+      }>(`/admin/conversations/${id}`),
+    ]).then(([msgData, conv]) => {
+      setMessages(msgData.messages);
+      setHasMore(msgData.has_more);
+      setNextBefore(msgData.next_before);
+      setConvInfo({
+        external_user_id: conv.external_user_id,
+        user_display_name: conv.user_display_name,
+        user_avatar: conv.user_avatar,
+        user_id_by_app: conv.user_id_by_app,
+      });
     }).catch(() => {}).finally(() => setIsInitialLoading(false));
   }, [id]);
 
@@ -239,9 +260,29 @@ export default function ConversationDetailPage({ params }: { params: Promise<{ i
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">Conversation {id?.slice(0, 8)}</h1>
+          {convInfo && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-gray-50 rounded-lg border">
+              {convInfo.user_avatar ? (
+                <img src={convInfo.user_avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium">
+                  {convInfo.user_display_name ? convInfo.user_display_name[0]?.toUpperCase() : <User className="w-3 h-3" />}
+                </div>
+              )}
+              <div>
+                <div className="text-sm font-medium">
+                  {convInfo.user_display_name || "—"}
+                </div>
+                <div className="text-xs text-gray-400 font-mono">{convInfo.external_user_id}</div>
+              </div>
+            </div>
+          )}
           <span className="text-sm text-gray-500">{messages.length} msgs</span>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => window.open("/admin/users", "_blank")}>
+            <User className="mr-1 h-4 w-4" />View User
+          </Button>
           <Button
             variant="outline"
             size="sm"

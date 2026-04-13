@@ -1,10 +1,11 @@
 """Webhook endpoints for receiving Zalo messages."""
-import logging
+from datetime import datetime, timezone
 from typing import Annotated
 
 import redis.asyncio as redis
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import PlainTextResponse
+from sqlalchemy import select
 
 from app.api.config import api_settings
 from app.api.dependencies import get_rabbitmq, get_redis
@@ -12,13 +13,63 @@ from app.api.schemas.webhook import WebhookResponse, ZaloWebhookPayload
 from app.api.services.dedup import check_and_set_message_id, check_and_set_ack_sent
 from app.api.services.queue import publish_conversation_process
 from app.api.services.signature import verify_zalo_signature
-from app.core.rabbitmq import publish_message, OUTBOUND_SEND_RK
+from app.core.config import settings
+from app.models.zalo_user import ZaloUser
+from app.workers.shared.db import db_session
+from app.workers.shared.logging import get_logger
+from app.workers.shared.zalo_token_manager import get_zalo_token_manager
 
-logger = logging.getLogger("neochat.api.webhooks")
+logger = get_logger("neochat.api.webhooks")
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 ACK_TEXT = "Dạ em đã nhận được tin nhắn của anh/chị rồi ạ! Đợi em xíu để em hỗ trợ nhé 😊"
+
+
+async def _upsert_zalo_user(user_id: str) -> None:
+    """Fetch user profile from Zalo API and upsert into zalo_users table."""
+    try:
+        tm = get_zalo_token_manager()
+        data = await tm.get_user_detail(user_id)
+    except Exception as exc:
+        logger.warning("zalo_user_fetch_failed", extra={"user_id": user_id, "error": str(exc)})
+        return
+
+    async with db_session() as session:
+        result = await session.execute(select(ZaloUser).where(ZaloUser.user_id == user_id))
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            existing.display_name = data.get("display_name")
+            existing.user_alias = data.get("user_alias")
+            existing.avatar = data.get("avatar")
+            existing.user_last_interaction_date = data.get("user_last_interaction_date")
+            existing.user_is_follower = data.get("user_is_follower", False)
+            existing.shared_info = data.get("shared_info")
+            existing.tags_and_notes_info = data.get("tags_and_notes_info")
+            existing.user_external_id = data.get("user_external_id")
+            existing.user_id_by_app = data.get("user_id_by_app")
+            existing.is_sensitive = data.get("is_sensitive")
+            existing.last_fetched_at = datetime.now(timezone.utc)
+        else:
+            existing = ZaloUser(
+                user_id=user_id,
+                display_name=data.get("display_name"),
+                user_alias=data.get("user_alias"),
+                avatar=data.get("avatar"),
+                user_last_interaction_date=data.get("user_last_interaction_date"),
+                user_is_follower=data.get("user_is_follower", False),
+                shared_info=data.get("shared_info"),
+                tags_and_notes_info=data.get("tags_and_notes_info"),
+                user_external_id=data.get("user_external_id"),
+                user_id_by_app=data.get("user_id_by_app"),
+                is_sensitive=data.get("is_sensitive"),
+                last_fetched_at=datetime.now(timezone.utc),
+            )
+            session.add(existing)
+
+        await session.commit()
+        logger.info("zalo_user_upserted", extra={"user_id": user_id, "display_name": data.get("display_name")})
 
 
 @router.get(
@@ -110,6 +161,18 @@ async def zalo_webhook(
     if not message_id:
         logger.warning("zalo_message_without_id", extra={"event": payload.event_name})
         return WebhookResponse(success=True)
+
+    # Dev mode: restrict to a single Zalo user ID
+    if settings.dev_zalo_user_id and sender_id != settings.dev_zalo_user_id:
+        logger.info(
+            "zalo_dev_mode_user_skipped",
+            extra={"user_id": sender_id, "dev_zalo_user_id": settings.dev_zalo_user_id},
+        )
+        return WebhookResponse(success=True)
+
+    # 2b. Fetch and store user profile if new or stale
+    if sender_id:
+        await _upsert_zalo_user(sender_id)
 
     # 3. Check deduplication
     is_new = await check_and_set_message_id(redis_client, message_id)

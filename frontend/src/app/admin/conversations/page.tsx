@@ -62,7 +62,31 @@ export default function ConversationsPage() {
                   </Link>
                 ),
               },
-              { header: "User ID", accessor: (row) => row.external_user_id },
+              {
+                header: "User",
+                accessor: (row) => (
+                  <div className="flex items-center gap-2">
+                    {row.user_avatar ? (
+                      <img src={row.user_avatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium">
+                        {row.user_display_name ? row.user_display_name[0]?.toUpperCase() : row.external_user_id[0]}
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-medium text-sm">
+                        {row.user_display_name || "—"}
+                      </div>
+                      <Link
+                        href={`/admin/users`}
+                        className="text-xs text-gray-400 hover:text-gray-600 font-mono"
+                      >
+                        {row.external_user_id}
+                      </Link>
+                    </div>
+                  </div>
+                ),
+              },
               { header: "Status", accessor: (row) => <Badge>{row.status}</Badge> },
               { header: "Created", accessor: (row) => new Date(row.created_at).toLocaleString() },
             ]}

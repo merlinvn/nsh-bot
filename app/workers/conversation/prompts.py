@@ -46,42 +46,48 @@ class PromptManager:
         self._cache = PromptCache()
         self._refresh_lock = asyncio.Lock()
 
-    def get_active_version(self) -> str:
+    async def get_active_version(self) -> str:
         """Return the currently active prompt version string."""
+        if self._cache._system_version:
+            return self._cache._system_version
+        if self._cache._system_prompt and not self._cache._is_expired():
+            return self._cache._system_version
+        await self._refresh()
         if self._cache._system_version:
             return self._cache._system_version
         return "unknown"
 
-    def get_system_prompt(self) -> str:
+    async def get_system_prompt(self) -> str:
         """Get the active system prompt, loading from DB if needed."""
         if self._cache._system_prompt and not self._cache._is_expired():
             return self._cache._system_prompt
 
-        # Trigger async refresh if possible, but return cached or default
-        asyncio.create_task(self._refresh())
+        await self._refresh()
+
         if self._cache._system_prompt:
             return self._cache._system_prompt
 
-        # Return default if cache miss and no event loop
         return self._get_default_system_prompt()
 
-    def get_tool_policy_prompt(self) -> str:
+    async def get_tool_policy_prompt(self) -> str:
         """Get the tool policy prompt, loading from DB if needed."""
         if self._cache._tool_policy_prompt and not self._cache._is_expired():
             return self._cache._tool_policy_prompt
 
-        asyncio.create_task(self._refresh())
+        await self._refresh()
+
         if self._cache._tool_policy_prompt:
             return self._cache._tool_policy_prompt
 
         return self._get_default_tool_policy_prompt()
 
-    def get_fallback_prompt(self) -> str:
+    async def get_fallback_prompt(self) -> str:
         """Get the fallback prompt text."""
         if self._cache._fallback_prompt and not self._cache._is_expired():
             return self._cache._fallback_prompt
 
-        asyncio.create_task(self._refresh())
+        await self._refresh()
+
         if self._cache._fallback_prompt:
             return self._cache._fallback_prompt
 
@@ -126,7 +132,7 @@ class PromptManager:
                 versions = system_prompt.versions
                 active_version_str = system_prompt.active_version
                 for version_entry in versions:
-                    if version_entry.get("version") == active_version_str:
+                    if str(version_entry.get("version")) == active_version_str:
                         self._cache._system_prompt = version_entry.get(
                             "template", system_prompt.template
                         )
@@ -149,7 +155,7 @@ class PromptManager:
                 versions = tool_policy.versions
                 active_version_str = tool_policy.active_version
                 for version_entry in versions:
-                    if version_entry.get("version") == active_version_str:
+                    if str(version_entry.get("version")) == active_version_str:
                         self._cache._tool_policy_prompt = version_entry.get(
                             "template", tool_policy.template
                         )

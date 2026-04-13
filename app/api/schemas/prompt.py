@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class PromptVersion(BaseModel):
     """A single version entry within a prompt."""
-    version: str
+    version: int
     template: str
     created_at: datetime
     active: bool
@@ -30,7 +30,7 @@ class PromptResponse(BaseModel):
 class PromptActivateRequest(BaseModel):
     """Request to activate a specific prompt version."""
     name: str = Field(..., description="Prompt name")
-    version: str = Field(..., description="Version string to activate (e.g., 'v2.0')")
+    version: int = Field(..., description="Version number to activate")
 
 
 class PromptCreate(BaseModel):
@@ -48,5 +48,5 @@ class PromptUpdate(BaseModel):
 
 class VersionCreate(BaseModel):
     """Request to create or activate a specific version."""
-    version: int
+    version: int | None = None
     template: str | None = None

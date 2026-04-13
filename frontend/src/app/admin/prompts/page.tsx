@@ -24,8 +24,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { toast } from "sonner";
+
+const PROMPT_TYPES = [
+  { value: "system", label: "System Prompt", desc: "Main agent prompt — loaded at runtime", badge: "default" as const },
+  { value: "tool_policy", label: "Tool Policy", desc: "Tool usage guidelines", badge: "secondary" as const },
+  { value: "fallback", label: "Fallback", desc: "Response when agent fails", badge: "outline" as const },
+];
 
 export default function PromptsPage() {
   const { data, isLoading } = usePrompts();
@@ -33,23 +40,20 @@ export default function PromptsPage() {
   const deleteMutation = useDeletePrompt();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newDescription, setNewDescription] = useState("");
   const [newTemplate, setNewTemplate] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ name: string } | null>(null);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim() || !newTemplate.trim()) return;
+    if (!newName || !newTemplate.trim()) return;
     try {
       await createMutation.mutateAsync({
-        name: newName.trim(),
-        description: newDescription.trim() || undefined,
+        name: newName,
         template: newTemplate.trim(),
       });
-      toast.success(`Prompt "${newName.trim()}" created`);
+      toast.success(`Prompt "${newName}" created`);
       setShowCreate(false);
       setNewName("");
-      setNewDescription("");
       setNewTemplate("");
     } catch {
       toast.error("Failed to create prompt");
@@ -87,38 +91,47 @@ export default function PromptsPage() {
               <thead>
                 <tr className="border-b bg-gray-50 text-left">
                   <th className="px-4 py-3 text-sm font-medium text-gray-500">Name</th>
-                  <th className="px-4 py-3 text-sm font-medium text-gray-500">Description</th>
+                  <th className="px-4 py-3 text-sm font-medium text-gray-500">Type</th>
                   <th className="px-4 py-3 text-sm font-medium text-gray-500">Active Version</th>
                   <th className="px-4 py-3 text-sm font-medium text-gray-500">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {data.map((prompt) => (
-                  <tr key={prompt.name} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <Link href={`/admin/prompts/${prompt.name}`} className="font-medium hover:underline">
-                        {prompt.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{prompt.description || "—"}</td>
-                    <td className="px-4 py-3 text-sm">v{prompt.active_version}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Link href={`/admin/prompts/${prompt.name}`}>
-                          <Button variant="ghost" size="sm">Edit</Button>
+                {data.map((prompt) => {
+                  const typeMeta = PROMPT_TYPES.find(t => t.value === prompt.name);
+                  return (
+                    <tr key={prompt.name} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <Link href={`/admin/prompts/${prompt.name}`} className="font-medium hover:underline">
+                          {prompt.name}
                         </Link>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-500 hover:text-red-600"
-                          onClick={() => setDeleteTarget({ name: prompt.name })}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3">
+                        {typeMeta ? (
+                          <Badge variant={typeMeta.badge}>{typeMeta.label}</Badge>
+                        ) : (
+                          <span className="text-sm text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">v{prompt.active_version}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Link href={`/admin/prompts/${prompt.name}`}>
+                            <Button variant="ghost" size="sm">Edit</Button>
+                          </Link>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-600"
+                            onClick={() => setDeleteTarget({ name: prompt.name })}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (
@@ -131,34 +144,32 @@ export default function PromptsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Prompt</DialogTitle>
-            <DialogDescription>Create a new prompt with an initial template.</DialogDescription>
+            <DialogDescription>
+              Only system, tool_policy, and fallback prompts are loaded by the conversation worker.
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="space-y-1">
-              <Label htmlFor="name">Name</Label>
-              <Input
+              <Label htmlFor="name">Prompt Type</Label>
+              <select
                 id="name"
                 value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g., customer-support"
+                onChange={e => setNewName(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Input
-                id="description"
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                placeholder="Brief description of this prompt"
-              />
+              >
+                <option value="">Select prompt type...</option>
+                {PROMPT_TYPES.map(t => (
+                  <option key={t.value} value={t.value}>{t.label} — {t.desc}</option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1">
               <Label htmlFor="template">Template</Label>
               <Textarea
                 id="template"
                 value={newTemplate}
-                onChange={(e) => setNewTemplate(e.target.value)}
+                onChange={e => setNewTemplate(e.target.value)}
                 rows={8}
                 className="font-mono text-sm"
                 placeholder="You are a helpful assistant..."
@@ -169,7 +180,7 @@ export default function PromptsPage() {
               <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createMutation.isPending || !newName.trim() || !newTemplate.trim()}>
+              <Button type="submit" disabled={createMutation.isPending || !newName || !newTemplate.trim()}>
                 {createMutation.isPending ? "Creating..." : "Create"}
               </Button>
             </DialogFooter>

@@ -1,5 +1,6 @@
 """Zalo OAuth token management with persistent storage."""
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import uuid4
 
 import httpx
@@ -151,6 +152,26 @@ class ZaloTokenManager:
             raise Exception("No Zalo access token available")
 
         return self._access_token
+
+    async def get_user_detail(self, user_id: str) -> dict[str, Any]:
+        """Fetch user profile from Zalo API."""
+        access_token = await self.get_access_token()
+        url = "https://openapi.zalo.me/v3.0/oa/user/detail"
+        headers = {"access_token": access_token}
+        params = {"data": {"user_id": str(user_id)}}
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=headers, params=params)
+
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch user detail: {response.status_code} {response.text}")
+
+        result = response.json()
+        logger.info("zalo_user_detail_response", extra={"user_id": user_id, "result": result})
+        if result.get("error") != 0:
+            raise Exception(f"Zalo API error: {result.get('message')} (code {result.get('error')})")
+
+        return result.get("data", {})
 
     async def initialize_from_static_token(self) -> None:
         """

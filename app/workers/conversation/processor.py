@@ -46,11 +46,11 @@ class AgentConfig:
     max_steps: int = MAX_LLM_STEPS
 
 
-def _build_main_agent_config(prompt_manager: PromptManager, registry) -> AgentConfig:
+async def _build_main_agent_config(prompt_manager: PromptManager, registry) -> AgentConfig:
     """Build the main agent configuration."""
     return AgentConfig(
         name="main",
-        system_prompt=prompt_manager.get_system_prompt(),
+        system_prompt=await prompt_manager.get_system_prompt(),
         tool_definitions=registry.definitions(allowed_names=MAIN_AGENT_TOOLS),
     )
 
@@ -116,7 +116,7 @@ class ConversationProcessor:
                 )
 
                 # Step 2: Save inbound message to DB
-                prompt_version = self._prompt_manager.get_active_version()
+                prompt_version = await self._prompt_manager.get_active_version()
                 inbound_msg = Message(
                     conversation_id=conversation.id,
                     direction="inbound",
@@ -134,7 +134,7 @@ class ConversationProcessor:
                 )
 
                 # Step 3: Build prompt and call LLM
-                system_prompt = self._prompt_manager.get_system_prompt()
+                system_prompt = await self._prompt_manager.get_system_prompt()
                 conversation_history = await self._get_conversation_history(
                     db, conversation.id, limit=10
                 )
@@ -200,7 +200,7 @@ class ConversationProcessor:
                         direction="outbound",
                         text=outbound_text or FALLBACK_TEXT,
                         message_id=f"{zalo_message_id}-out",
-                        prompt_version=self._prompt_manager.get_active_version(),
+                        prompt_version=await self._prompt_manager.get_active_version(),
                         model="fallback",
                         latency_ms=0,
                         token_usage=None,
@@ -456,7 +456,7 @@ class ConversationProcessor:
         db: AsyncSession,
     ) -> "LLMResponse":
         """Call LLM with tools (main agent path)."""
-        main_agent = _build_main_agent_config(self._prompt_manager, self._registry)
+        main_agent = await _build_main_agent_config(self._prompt_manager, self._registry)
         return await self._run_agent_loop(
             agent=main_agent,
             conversation_history=conversation_history,

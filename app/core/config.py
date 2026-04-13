@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     max_tool_calls: int = 2
     llm_timeout_seconds: int = 15
 
+    # Dev mode: restrict processing to a single Zalo user ID
+    # Leave empty to process all users normally
+    dev_zalo_user_id: str = ""
+
 
 _settings_instance: Settings | None = None
 
