@@ -16,6 +16,7 @@ export interface Conversation {
   user_avatar: string | null;
   status: string;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Message {

@@ -171,12 +171,12 @@ function ToolUsageChart({ start, end }: { start: string; end: string }) {
           <div className="h-48 flex items-center justify-center text-gray-400">No tool data</div>
         ) : (
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} layout="vertical">
+            <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis type="number" tick={{ fontSize: 12 }} />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 12 }} width={120} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, angle: chartData.length > 3 ? -30 : 0, textAnchor: chartData.length > 3 ? 'end' : 'middle' }} />
+              <YAxis tick={{ fontSize: 12 }} />
               <Tooltip />
-              <Bar dataKey="count" fill="#10b981" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         )}

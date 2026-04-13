@@ -88,7 +88,7 @@ export default function ConversationsPage() {
                 ),
               },
               { header: "Status", accessor: (row) => <Badge>{row.status}</Badge> },
-              { header: "Created", accessor: (row) => new Date(row.created_at).toLocaleString() },
+              { header: "Updated", accessor: (row) => new Date(row.updated_at).toLocaleString() },
             ]}
           />
           {data && totalPages > 1 && (

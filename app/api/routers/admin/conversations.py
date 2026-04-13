@@ -24,7 +24,7 @@ async def list_conversations(
     created_before: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
-    sort: str = "created_at",
+    sort: str = "updated_at",
     order: str = "desc",
     db: AsyncSession = Depends(get_db),
     _: AdminUser = Depends(get_current_admin_user),
@@ -40,6 +40,8 @@ async def list_conversations(
         query = query.where(Conversation.status == status)
     if sort == "created_at":
         order_col = Conversation.created_at if order == "asc" else Conversation.created_at.desc()
+    elif sort == "updated_at":
+        order_col = Conversation.updated_at if order == "asc" else Conversation.updated_at.desc()
     query = query.order_by(order_col)
     query = query.offset((page - 1) * size).limit(size)
     result = await db.execute(query)
@@ -62,6 +64,7 @@ async def list_conversations(
                 "user_avatar": avatar,
                 "status": c.status,
                 "created_at": c.created_at.isoformat(),
+                "updated_at": c.updated_at.isoformat(),
             }
             for c, display_name, avatar in rows
         ],

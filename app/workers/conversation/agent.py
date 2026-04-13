@@ -5,6 +5,7 @@ Both ConversationProcessor and playground use this same runner.
 """
 from __future__ import annotations
 
+import inspect
 import json
 import time
 from dataclasses import dataclass
@@ -138,7 +139,9 @@ class AgentRunner:
                     )
 
                     if on_tool_call:
-                        on_tool_call(tc.name, tc.input, result.output, True, tool_latency_ms)
+                        cb = on_tool_call(tc.name, tc.input, result.output, True, tool_latency_ms)
+                        if inspect.iscoroutine(cb):
+                            await cb
 
                     messages.append({
                         "role": "user",
@@ -162,7 +165,9 @@ class AgentRunner:
                     )
 
                     if on_tool_call:
-                        on_tool_call(tc.name, tc.input, {"error": str(exc)}, False, tool_latency_ms)
+                        cb = on_tool_call(tc.name, tc.input, {"error": str(exc)}, False, tool_latency_ms)
+                        if inspect.iscoroutine(cb):
+                            await cb
 
                     messages.append({
                         "role": "user",

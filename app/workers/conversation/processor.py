@@ -6,7 +6,7 @@ import uuid
 from typing import Any, Optional
 
 import aio_pika
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation
@@ -64,6 +64,7 @@ class ConversationProcessor:
                     prompt_version=prompt_version,
                 )
                 db.add(inbound_msg)
+                conversation.updated_at = func.now()
                 await db.commit()
                 await db.refresh(inbound_msg)
 
