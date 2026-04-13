@@ -2,6 +2,7 @@
 import asyncio
 import json
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import aio_pika
@@ -14,9 +15,21 @@ from app.models.evaluation import EvaluationTestCase, PromptEvaluation
 from app.models.prompt import Prompt
 from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import create_llm_client
-from app.workers.conversation.processor import MAX_LLM_STEPS, MAX_TOOL_CALLS_PER_STEP
-from app.workers.conversation.registry import get_registry, LocalToolBackend
+from app.workers.conversation.prompts import PromptManager
+from app.workers.conversation.registry import get_registry, LocalToolBackend, QUOTE_AGENT_TOOLS
 from app.workers.conversation.tools import ToolExecutor
+
+MAX_LLM_STEPS = 3
+MAX_TOOL_CALLS_PER_STEP = 2
+
+
+@dataclass
+class AgentConfig:
+    """Configuration for an agent (main or subagent)."""
+    name: str
+    system_prompt: str
+    tool_definitions: list[dict[str, Any]]
+    max_steps: int = MAX_LLM_STEPS
 from app.workers.shared.db import db_session
 from app.workers.shared.logging import get_logger
 from app.workers.shared.queue import get_channel
@@ -82,24 +95,29 @@ class LLMProcessor:
     # ---------------------------------------------------------------------------
 
     async def _process_zalo(self, payload: dict[str, Any], request_id: str) -> None:
-        """Process a Zalo LLM call (from conversation.process passthrough).
+        """Process a Zalo LLM call routed from conversation.process via llm.process.
 
-        Currently a pass-through — the conversation.process consumer already handles
-        Zalo LLM calls. This path exists for future migration where Zalo also goes
-        through llm.process.
+        Runs AgentRunner with full tool call recording (own db_session),
+        handles quote subagent delegation, updates outbound Message in DB,
+        and publishes response to Redis for ConversationProcessor.
         """
-        # Resolve system prompt
-        prompt_name = payload.get("prompt_name", "")
-        system_prompt = ""
-        if prompt_name:
+        request_id = payload.get("request_id", request_id)
+        response_channel = payload.get("response_channel", f"llm:response:{request_id}")
+
+        inbound_message_id = payload.get("inbound_message_id", "")
+        outbound_message_id = payload.get("outbound_message_id", "")
+        correlation_id = payload.get("correlation_id", "")
+
+        # system_prompt may be passed directly or resolved via prompt_name
+        system_prompt = payload.get("system_prompt", "")
+        if not system_prompt and payload.get("prompt_name"):
             async with db_session() as db:
-                result = await db.execute(select(Prompt).where(Prompt.name == prompt_name))
+                result = await db.execute(select(Prompt).where(Prompt.name == payload["prompt_name"]))
                 prompt_record = result.scalar_one_or_none()
                 system_prompt = prompt_record.template if prompt_record else ""
 
-        messages = payload.get("messages", [])
-        new_message = payload.get("new_message", "")
-        conversation_history = messages + [{"role": "user", "content": new_message}]
+        conversation_history = payload.get("conversation_history", [])
+        inbound_text = payload.get("inbound_text", "")
 
         registry = get_registry()
         backend = LocalToolBackend(registry)
@@ -114,10 +132,62 @@ class LLMProcessor:
             max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
         )
 
-        result = await runner.run(conversation_history[:-1], conversation_history[-1]["content"])
+        async def on_tool_call(
+            tool_name: str,
+            tool_input: dict,
+            tool_output: dict,
+            success: bool,
+            latency_ms: int,
+        ) -> None:
+            # Intercept delegate_to_quote_agent — run quote subagent inline
+            if tool_name == "delegate_to_quote_agent" and success and tool_output.get("delegated"):
+                result_dict = await _run_quote_subagent_in_llm_worker(
+                    customer_message=tool_output["customer_message"],
+                    known_context=tool_output.get("known_context", {}),
+                    correlation_id=correlation_id,
+                    inbound_message_id=uuid.UUID(inbound_message_id) if inbound_message_id else None,
+                )
+                tool_output.clear()
+                tool_output.update(result_dict)
+                success = result_dict.get("status") != "error"
 
-        # Publish to outbound.send
-        await self._publish_outbound(payload, result.text)
+            # Record ToolCall in DB
+            async with db_session() as db:
+                from app.models.tool_call import ToolCall
+                msg_uuid = uuid.UUID(inbound_message_id) if inbound_message_id else None
+                record = ToolCall(
+                    message_id=msg_uuid,
+                    tool_name=tool_name,
+                    input=tool_input,
+                    output=tool_output,
+                    success=success,
+                    latency_ms=latency_ms,
+                )
+                db.add(record)
+                db.commit()
+
+        result = await runner.run(conversation_history, inbound_text, on_tool_call=on_tool_call)
+
+        # Update outbound Message in DB with LLM response
+        if outbound_message_id:
+            async with db_session() as db:
+                from app.models.message import Message
+                msg_result = await db.execute(
+                    select(Message).where(Message.id == uuid.UUID(outbound_message_id))
+                )
+                outbound_msg = msg_result.scalar_one_or_none()
+                if outbound_msg:
+                    outbound_msg.text = result.text
+                    outbound_msg.latency_ms = result.latency_ms
+                    outbound_msg.token_usage = result.token_usage
+                    await db.commit()
+
+        # Publish response to Redis for ConversationProcessor
+        await self._publish_redis_response(request_id, "zalo", {
+            "text": result.text,
+            "token_usage": result.token_usage,
+            "latency_ms": result.latency_ms,
+        })
 
     async def _process_playground(self, payload: dict[str, Any], request_id: str) -> None:
         """Process a playground chat LLM call."""
@@ -325,3 +395,110 @@ Kèm theo giải thích ngắn gọn (1-2 câu) sau PASS/FAIL."""
             **response,
         }
         await redis_client.publish(f"llm:response:{request_id}", json.dumps(full_response, default=str))
+
+
+# ---------------------------------------------------------------------------
+# Quote subagent runner (for LLMProcessor)
+# ---------------------------------------------------------------------------
+
+
+def _build_quote_agent_config() -> AgentConfig:
+    """Build the quote subagent configuration."""
+    prompt_manager = PromptManager()
+    registry = get_registry()
+    return AgentConfig(
+        name="quote",
+        system_prompt=prompt_manager.get_quote_system_prompt(),
+        tool_definitions=registry.definitions(allowed_names=QUOTE_AGENT_TOOLS),
+    )
+
+
+async def _run_quote_subagent_in_llm_worker(
+    customer_message: str,
+    known_context: dict,
+    correlation_id: str,
+    inbound_message_id: "uuid.UUID | None",
+) -> dict:
+    """Run the quote subagent loop with its own db_session.
+
+    Mirrors ConversationProcessor._run_quote_subagent() but adapted for LLMProcessor
+    which has its own db_session scope.
+    """
+    quote_agent = _build_quote_agent_config()
+
+    subagent_input_parts = [f"Khách hàng hỏi: {customer_message}"]
+    if known_context:
+        ctx_lines = [f"Thông tin đã biết: {known_context}"]
+        subagent_input_parts.extend(ctx_lines)
+    subagent_input = "\n".join(subagent_input_parts)
+
+    registry = get_registry()
+    backend = LocalToolBackend(registry)
+    tool_executor = ToolExecutor(backend)
+
+    runner = AgentRunner(
+        llm=create_llm_client(
+            provider=settings.llm_provider,
+            anthropic_api_key=settings.anthropic_api_key,
+            anthropic_model=settings.anthropic_model,
+            openai_base_url=settings.openai_base_url,
+            openai_api_key=settings.openai_api_key,
+            openai_model=settings.openai_model,
+        ),
+        tool_executor=tool_executor,
+        system_prompt=quote_agent.system_prompt,
+        tool_definitions=quote_agent.tool_definitions,
+        max_steps=quote_agent.max_steps,
+        max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
+    )
+
+    async def on_tool_call(
+        tool_name: str,
+        tool_input: dict,
+        tool_output: dict,
+        success: bool,
+        latency_ms: int,
+    ) -> None:
+        async with db_session() as db:
+            from app.models.tool_call import ToolCall
+            record = ToolCall(
+                message_id=inbound_message_id,
+                tool_name=tool_name,
+                input=tool_input,
+                output=tool_output,
+                success=success,
+                latency_ms=latency_ms,
+            )
+            db.add(record)
+            db.commit()
+
+    try:
+        result = await runner.run([], subagent_input, on_tool_call=on_tool_call)
+
+        raw_text = (result.text or "").strip()
+        try:
+            parsed = json.loads(raw_text)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(
+                "quote_subagent_invalid_json",
+                extra={"correlation_id": correlation_id, "raw_text": raw_text[:200]},
+            )
+            parsed = {
+                "status": "manual_review",
+                "message_to_customer": "Em cần kiểm tra thêm để báo giá chính xác. Anh/chị vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ.",
+                "reason": "quote_subagent_invalid_json",
+                "raw_text": raw_text[:200],
+            }
+
+        return parsed
+
+    except Exception as exc:
+        logger.exception(
+            "quote_subagent_error",
+            extra={"correlation_id": correlation_id, "error": str(exc)},
+        )
+        return {
+            "status": "manual_review",
+            "message_to_customer": "Em cần kiểm tra thêm để báo giá chính xác. Anh/chị vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ.",
+            "reason": f"quote_subagent_error: {str(exc)[:100]}",
+        }

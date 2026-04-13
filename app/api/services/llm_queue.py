@@ -46,6 +46,41 @@ async def enqueue_llm_request(
         raise TimeoutError(f"LLM request timed out after {timeout}s (request_id={request_id})")
 
 
+async def enqueue_llm_request_zalo(
+    payload: dict[str, Any],
+    timeout: float = 60.0,
+) -> dict[str, Any]:
+    """Publish a Zalo LLM request to llm.process and wait for response via Redis.
+
+    Unlike enqueue_llm_request(), this passes a response_channel in the payload
+    so LLMProcessor knows where to publish the response.
+    """
+    request_id = str(uuid.uuid4())
+    redis_client = await get_redis_client()
+    response_channel = f"llm:response:{request_id}"
+
+    full_payload = {
+        **payload,
+        "request_id": request_id,
+        "response_channel": response_channel,
+    }
+
+    await publish_message(
+        routing_key=LLM_PROCESS_RK,
+        body=full_payload,
+        headers={"correlation_id": payload.get("correlation_id", "")},
+    )
+
+    try:
+        msg = await asyncio.wait_for(
+            _wait_for_redis_response(redis_client, response_channel),
+            timeout=timeout,
+        )
+        return json.loads(msg)
+    except asyncio.TimeoutError:
+        raise TimeoutError(f"Zalo LLM request timed out after {timeout}s (request_id={request_id})")
+
+
 async def _wait_for_redis_response(redis_client, channel: str):
     """Wait for a message on a Redis pub/sub channel (skips subscribe confirmation)."""
     future: asyncio.Future = asyncio.get_running_loop().create_future()
