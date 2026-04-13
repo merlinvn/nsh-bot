@@ -308,14 +308,14 @@ export default function PlaygroundPage() {
                             <span className={`font-medium truncate ${tc.success ? "text-orange-700" : "text-red-700"}`}>{tc.name}</span>
                             <span className="text-gray-400 text-xs shrink-0">{tc.latency_ms}ms</span>
                           </div>
-                          <div className="mt-1 text-orange-700 break-all">
+                          <div className="mt-1">
                             <span className="text-gray-500">In: </span>
-                            <pre className="inline whitespace-pre-wrap break-normal text-xs">{JSON.stringify(tc.input)}</pre>
+                            <pre className="text-orange-700 text-xs whitespace-pre-wrap overflow-y-auto max-h-24">{JSON.stringify(tc.input)}</pre>
                           </div>
-                          <div className="mt-1 text-green-700 break-all">
+                          <div className="mt-1">
                             <span className="text-gray-500">Out: </span>
                             {tc.success ? (
-                              <pre className="inline whitespace-pre-wrap break-normal text-xs">{JSON.stringify(tc.output)}</pre>
+                              <pre className="text-green-700 text-xs whitespace-pre-wrap overflow-y-auto max-h-24">{JSON.stringify(tc.output)}</pre>
                             ) : (
                               <span className="text-red-600 text-xs">{JSON.stringify(tc.output)}</span>
                             )}
