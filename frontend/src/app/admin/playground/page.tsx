@@ -48,6 +48,11 @@ export default function PlaygroundPage() {
 
   // Load template when version changes
   useEffect(() => {
+    // Use default prompt when none available
+    if (selectedPromptName === "__default__") {
+      setSystemPrompt("Bạn là một trợ lý AI hữu ích. Trả lời ngắn gọn và lịch sự.");
+      return;
+    }
     if (!promptDetail?.versions || !selectedVersion) return;
     const ver = promptDetail.versions.find(
       (v: { version: number }) => v.version === Number(selectedVersion)
@@ -55,14 +60,17 @@ export default function PlaygroundPage() {
     if (ver) {
       setSystemPrompt(promptDetail.template || "");
     }
-  }, [selectedVersion, promptDetail]);
+  }, [selectedVersion, promptDetail, selectedPromptName]);
 
-  // Auto-select first prompt
+  // Auto-select first prompt, or use default if none exist
   useEffect(() => {
+    if (promptsLoading) return;
     if (prompts && prompts.length > 0 && !selectedPromptName) {
       setSelectedPromptName(prompts[0].name);
+    } else if (prompts && prompts.length === 0 && !selectedPromptName) {
+      setSelectedPromptName("__default__");
     }
-  }, [prompts, selectedPromptName]);
+  }, [prompts, promptsLoading, selectedPromptName]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,6 +127,10 @@ export default function PlaygroundPage() {
                 <Label>Prompt</Label>
                 {promptsLoading ? (
                   <div className="h-9 bg-gray-100 rounded animate-pulse" />
+                ) : prompts && prompts.length === 0 ? (
+                  <div className="h-9 flex items-center text-sm text-gray-500 border rounded px-3">
+                    Mặc định
+                  </div>
                 ) : (
                   <Select value={selectedPromptName} onValueChange={(v) => v && setSelectedPromptName(v)}>
                     <SelectTrigger>
@@ -137,7 +149,11 @@ export default function PlaygroundPage() {
 
               <div className="space-y-1">
                 <Label>Phiên bản</Label>
-                {promptDetailLoading ? (
+                {selectedPromptName === "__default__" ? (
+                  <div className="h-9 flex items-center text-sm text-gray-500 border rounded px-3">
+                    Mặc định
+                  </div>
+                ) : promptDetailLoading ? (
                   <div className="h-9 bg-gray-100 rounded animate-pulse" />
                 ) : (
                   <Select value={selectedVersion} onValueChange={(v) => v && setSelectedVersion(v)}>
