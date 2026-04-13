@@ -70,7 +70,6 @@ export interface PromptVersion {
 
 export interface Prompt {
   name: string;
-  description: string | null;
   active_version: number;
   template: string;
   versions: { version: number; template?: string; created_at: string }[];

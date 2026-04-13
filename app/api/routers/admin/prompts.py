@@ -47,7 +47,6 @@ async def get_prompt(name: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Prompt not found")
     return {
         "name": prompt.name,
-        "description": prompt.description,
         "active_version": int(prompt.active_version),
         "template": prompt.template,
         "versions": prompt.versions,
