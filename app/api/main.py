@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware as FastAPICORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.config import admin_settings, api_settings
@@ -75,7 +75,7 @@ app = FastAPI(
 
 # Middleware stack (applied in reverse order of declaration)
 app.add_middleware(
-    CORSMiddleware,
+    FastAPICORSMiddleware,
     allow_origins=all_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
@@ -104,19 +104,52 @@ app.include_router(monitoring_router)
 # ---------- Exception handlers ----------
 
 
+# CORS headers — used by exception handlers to ensure error responses
+# always include CORS headers even when the middleware doesn't intercept.
+ALLOWED_ORIGINS = list(
+    set(
+        [
+            o.strip()
+            for o in (api_settings.cors_origins.split(",") + admin_settings.admin_cors_origins.split(","))
+            if o.strip()
+        ]
+    )
+)
+
+
+def _error_response(
+    status_code: int,
+    code: str,
+    message: str,
+    request_id: str | None,
+    extra: dict[str, Any] | None = None,
+) -> JSONResponse:
+    """Create a JSON error response with explicit CORS headers."""
+    content = {"code": code, "message": message, "request_id": request_id}
+    if extra:
+        content.update(extra)
+    return JSONResponse(
+        status_code=status_code,
+        content=content,
+        headers={
+            "Access-Control-Allow-Origin": ", ".join(ALLOWED_ORIGINS),
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        },
+    )
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     """Handle Pydantic validation errors."""
-    return JSONResponse(
+    return _error_response(
         status_code=422,
-        content={
-            "code": "VALIDATION_ERROR",
-            "message": "Request validation failed.",
-            "errors": exc.errors(),
-            "request_id": getattr(request.state, "request_id", None),
-        },
+        code="VALIDATION_ERROR",
+        message="Request validation failed.",
+        request_id=getattr(request.state, "request_id", None),
+        extra={"errors": exc.errors()},
     )
 
 
@@ -127,13 +160,11 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     code = detail.get("code", "HTTP_ERROR")
     message = detail.get("message", str(exc.detail))
 
-    return JSONResponse(
+    return _error_response(
         status_code=exc.status_code,
-        content={
-            "code": code,
-            "message": message,
-            "request_id": getattr(request.state, "request_id", None),
-        },
+        code=code,
+        message=message,
+        request_id=getattr(request.state, "request_id", None),
     )
 
 
@@ -150,13 +181,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
             "request_id": getattr(request.state, "request_id", None),
         },
     )
-    return JSONResponse(
+    return _error_response(
         status_code=500,
-        content={
-            "code": "INTERNAL_ERROR",
-            "message": "An unexpected error occurred.",
-            "request_id": getattr(request.state, "request_id", None),
-        },
+        code="INTERNAL_ERROR",
+        message="An unexpected error occurred.",
+        request_id=getattr(request.state, "request_id", None),
     )
 
 
