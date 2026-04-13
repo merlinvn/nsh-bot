@@ -15,8 +15,11 @@ from app.api.schemas.playground import BenchmarkRequest, CompletionRequest, Play
 from app.core.config import settings
 from app.models.admin_user import AdminUser
 from app.models.benchmark_result import BenchmarkItem, BenchmarkResult
+from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import create_llm_client
-from app.workers.conversation.tools import TOOL_DEFINITIONS
+from app.workers.conversation.processor import MAX_LLM_STEPS, MAX_TOOL_CALLS_PER_STEP
+from app.workers.conversation.registry import get_registry, LocalToolBackend
+from app.workers.conversation.tools import TOOL_DEFINITIONS, ToolExecutor
 
 router = APIRouter(prefix="/admin/playground", tags=["admin:playground"])
 
@@ -41,23 +44,31 @@ async def playground_chat(
         openai_model=settings.openai_model,
     )
 
-    # Build conversation history for LLM (same format as conversation worker)
-    history_messages = [{"role": msg["role"], "content": msg["content"]} for msg in body.messages]
-    history_messages.append({"role": "user", "content": body.user_message})
+    registry = get_registry()
+    backend = LocalToolBackend(registry)
+    tool_executor = ToolExecutor(backend)
 
-    response = await client.complete(
+    runner = AgentRunner(
+        llm=client,
+        tool_executor=tool_executor,
         system_prompt=body.system_prompt,
-        messages=history_messages,
-        tools=list(TOOL_DEFINITIONS),
+        tool_definitions=list(TOOL_DEFINITIONS),
+        max_steps=MAX_LLM_STEPS,
+        max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
     )
 
+    # Build history messages (role + content format)
+    history_messages = [{"role": msg["role"], "content": msg["content"]} for msg in body.messages]
+
+    result = await runner.run(history_messages, body.user_message)
+
     return {
-        "content": response.text,
-        "usage": response.token_usage,
-        "latency_ms": response.latency_ms,
+        "content": result.text,
+        "usage": result.token_usage,
+        "latency_ms": result.latency_ms,
         "tool_calls": [
-            {"id": tc.id, "name": tc.name, "input": tc.input}
-            for tc in response.tool_calls
+            {"id": tc.id, "name": tc.name, "input": tc.input, "output": tc.output, "success": tc.success, "latency_ms": tc.latency_ms}
+            for tc in result.tool_calls
         ],
     }
 

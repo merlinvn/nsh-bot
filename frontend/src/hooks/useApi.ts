@@ -211,7 +211,7 @@ export function usePlaygroundChat() {
       messages: { role: string; content: string }[];
       user_message: string;
       temperature?: number;
-    }) => api.post<{ content: string; usage?: unknown; latency_ms?: number; tool_calls?: { id: string; name: string; input: Record<string, unknown> }[] }>("/admin/playground/chat", body),
+    }) => api.post<{ content: string; usage?: unknown; latency_ms?: number; tool_calls?: { id: string; name: string; input: Record<string, unknown>; output: Record<string, unknown>; success: boolean; latency_ms: number }[] }>("/admin/playground/chat", body),
   });
 }
 

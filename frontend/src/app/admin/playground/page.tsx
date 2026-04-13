@@ -23,7 +23,7 @@ export default function PlaygroundPage() {
   const [response, setResponse] = useState<string>("");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [tokenUsage, setTokenUsage] = useState<{ input_tokens: number; output_tokens: number } | null>(null);
-  const [toolCalls, setToolCalls] = useState<{ id: string; name: string; input: Record<string, unknown> }[]>([]);
+  const [toolCalls, setToolCalls] = useState<{ id: string; name: string; input: Record<string, unknown>; output: Record<string, unknown>; success: boolean; latency_ms: number }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const { data: prompts, isLoading: promptsLoading } = usePrompts();
@@ -303,9 +303,20 @@ export default function PlaygroundPage() {
                     <div className="mt-3 pt-3 border-t space-y-2">
                       <div className="text-xs font-medium text-orange-600">Tool Calls ({toolCalls.length})</div>
                       {toolCalls.map((tc, i) => (
-                        <div key={i} className="bg-orange-50 border border-orange-200 rounded p-2 text-xs">
-                          <div className="font-medium text-orange-700">{tc.name}</div>
-                          <pre className="text-orange-600 mt-1 whitespace-pre-wrap">{JSON.stringify(tc.input, null, 2)}</pre>
+                        <div key={i} className={`border rounded p-2 text-xs ${tc.success ? "bg-orange-50 border-orange-200" : "bg-red-50 border-red-200"}`}>
+                          <div className="flex items-center justify-between">
+                            <span className={`font-medium ${tc.success ? "text-orange-700" : "text-red-700"}`}>{tc.name}</span>
+                            <span className="text-gray-400 text-xs">{tc.latency_ms}ms</span>
+                          </div>
+                          <div className="text-orange-600 mt-1">Input: <pre className="inline whitespace-pre-wrap">{JSON.stringify(tc.input)}</pre></div>
+                          <div className="mt-1">
+                            <span className="text-gray-500">Output: </span>
+                            {tc.success ? (
+                              <pre className="inline text-green-700 whitespace-pre-wrap">{JSON.stringify(tc.output)}</pre>
+                            ) : (
+                              <span className="text-red-600">{JSON.stringify(tc.output)}</span>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>

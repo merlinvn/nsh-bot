@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.models.tool_call import ToolCall
+from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import BaseLLM, create_llm_client
 from app.workers.conversation.types import LLMResponse, ToolCallResult
 from app.workers.conversation.prompts import PromptManager
@@ -290,162 +291,6 @@ class ConversationProcessor:
 
         return history
 
-    async def _run_agent_loop(
-        self,
-        agent: AgentConfig,
-        conversation_history: list[dict[str, str]],
-        inbound_text: str,
-        correlation_id: str,
-        inbound_message_id: uuid.UUID,
-        db: AsyncSession,
-    ) -> "LLMResponse":
-        """Generic agent loop runner - handles LLM calls + tool execution + re-calling."""
-        llm = self._get_llm()
-
-        messages = conversation_history + [{"role": "user", "content": inbound_text}]
-
-        for step in range(agent.max_steps):
-            logger.info(
-                "llm_call_start",
-                extra={
-                    "correlation_id": correlation_id,
-                    "agent": agent.name,
-                    "step": step + 1,
-                    "max_steps": agent.max_steps,
-                },
-            )
-
-            response = await llm.complete(
-                system_prompt=agent.system_prompt,
-                messages=messages,
-                tools=agent.tool_definitions,
-            )
-
-            logger.info(
-                "llm_call_end",
-                extra={
-                    "correlation_id": correlation_id,
-                    "agent": agent.name,
-                    "step": step + 1,
-                    "latency_ms": response.latency_ms,
-                    "has_tool_calls": len(response.tool_calls) > 0,
-                },
-            )
-
-            assistant_content: list[dict] = []
-            if response.text:
-                assistant_content.append({"type": "text", "text": response.text})
-            for tc in response.tool_calls:
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": tc.id,
-                    "name": tc.name,
-                    "input": tc.input,
-                })
-
-            if assistant_content:
-                messages.append({"role": "assistant", "content": assistant_content})
-
-            if not response.tool_calls:
-                return response
-
-            tool_calls_to_execute = response.tool_calls[:MAX_TOOL_CALLS_PER_STEP]
-
-            for tc in tool_calls_to_execute:
-                tool_start = time.time()
-                logger.info(
-                    "tool_call_start",
-                    extra={
-                        "correlation_id": correlation_id,
-                        "agent": agent.name,
-                        "tool_name": tc.name,
-                        "tool_input": tc.input,
-                    },
-                )
-
-                try:
-                    result = await self._tool_executor.execute(tc.name, tc.input)
-
-                    # Intercept delegate_to_quote_agent and run quote subagent
-                    if tc.name == "delegate_to_quote_agent" and result.output.get("delegated"):
-                        quote_result = await self._run_quote_subagent(
-                            customer_message=result.output["customer_message"],
-                            known_context=result.output.get("known_context", {}),
-                            correlation_id=correlation_id,
-                            inbound_message_id=inbound_message_id,
-                            db=db,
-                        )
-                        result = ToolResult(output=quote_result, success=True)
-
-                    tool_call_record = ToolCall(
-                        message_id=inbound_message_id,
-                        tool_name=tc.name,
-                        input=tc.input,
-                        output=result.output,
-                        success=True,
-                        latency_ms=int((time.time() - tool_start) * 1000),
-                    )
-                    db.add(tool_call_record)
-                    await db.commit()
-
-                    tool_latency = int((time.time() - tool_start) * 1000)
-                    logger.info(
-                        "tool_call_end",
-                        extra={
-                            "correlation_id": correlation_id,
-                            "agent": agent.name,
-                            "tool_name": tc.name,
-                            "success": True,
-                            "latency_ms": tool_latency,
-                        },
-                    )
-
-                    messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "content": json.dumps(result.output, ensure_ascii=False),
-                        }],
-                    })
-
-                except Exception as e:
-                    tool_latency = int((time.time() - tool_start) * 1000)
-                    logger.exception(
-                        "tool_call_error",
-                        extra={
-                            "correlation_id": correlation_id,
-                            "agent": agent.name,
-                            "tool_name": tc.name,
-                            "error": str(e),
-                            "error_type": type(e).__name__,
-                            "latency_ms": tool_latency,
-                        },
-                    )
-
-                    tool_call_record = ToolCall(
-                        message_id=inbound_message_id,
-                        tool_name=tc.name,
-                        input=tc.input,
-                        output={"error": str(e)},
-                        success=False,
-                        error=str(e),
-                        latency_ms=tool_latency,
-                    )
-                    db.add(tool_call_record)
-                    await db.commit()
-
-                    messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
-                            "content": json.dumps({"error": str(e)}, ensure_ascii=False),
-                        }],
-                    })
-
-        return response
-
     async def _call_llm_with_tools(
         self,
         system_prompt: str,
@@ -455,15 +300,60 @@ class ConversationProcessor:
         inbound_message_id: uuid.UUID,
         db: AsyncSession,
     ) -> "LLMResponse":
-        """Call LLM with tools (main agent path)."""
+        """Call LLM with tools (main agent path) using AgentRunner."""
         main_agent = await _build_main_agent_config(self._prompt_manager, self._registry)
-        return await self._run_agent_loop(
-            agent=main_agent,
-            conversation_history=conversation_history,
-            inbound_text=inbound_text,
-            correlation_id=correlation_id,
-            inbound_message_id=inbound_message_id,
-            db=db,
+        runner = AgentRunner(
+            llm=self._get_llm(),
+            tool_executor=self._tool_executor,
+            system_prompt=main_agent.system_prompt,
+            tool_definitions=main_agent.tool_definitions,
+            max_steps=main_agent.max_steps,
+            max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
+        )
+
+        # Capture inbound_message_id for quote subagent (closure)
+        _inbound_id = inbound_message_id
+
+        async def on_tool_call(
+            tool_name: str,
+            tool_input: dict,
+            tool_output: dict,
+            success: bool,
+            latency_ms: int,
+        ) -> None:
+            # Intercept delegate_to_quote_agent — run quote subagent and replace output
+            if tool_name == "delegate_to_quote_agent" and success and tool_output.get("delegated"):
+                result = await self._run_quote_subagent(
+                    customer_message=tool_output["customer_message"],
+                    known_context=tool_output.get("known_context", {}),
+                    correlation_id=correlation_id,
+                    inbound_message_id=_inbound_id,
+                    db=db,
+                )
+                tool_output.clear()
+                tool_output.update(result)
+                success = result.get("status") != "error"
+
+            # Persist tool call record to DB
+            record = ToolCall(
+                message_id=_inbound_id,
+                tool_name=tool_name,
+                input=tool_input,
+                output=tool_output,
+                success=success,
+                latency_ms=latency_ms,
+            )
+            db.add(record)
+            db.commit()
+
+        result = await runner.run(conversation_history, inbound_text, on_tool_call=on_tool_call)
+
+        # Convert AgentRunResult back to LLMResponse for existing process() caller
+        return LLMResponse(
+            text=result.text,
+            tool_calls=[ToolCallResult(id=tc.id, name=tc.name, input=tc.input) for tc in result.tool_calls],
+            latency_ms=result.latency_ms,
+            token_usage=result.token_usage,
         )
 
     async def _publish_outbound(
@@ -529,33 +419,54 @@ class ConversationProcessor:
             subagent_input_parts.extend(ctx_lines)
         subagent_input = "\n".join(subagent_input_parts)
 
-        try:
-            response = await self._run_agent_loop(
-                agent=quote_agent,
-                conversation_history=[],
-                inbound_text=subagent_input,
-                correlation_id=correlation_id,
-                inbound_message_id=inbound_message_id,
-                db=db,
+        runner = AgentRunner(
+            llm=self._get_llm(),
+            tool_executor=self._tool_executor,
+            system_prompt=quote_agent.system_prompt,
+            tool_definitions=quote_agent.tool_definitions,
+            max_steps=quote_agent.max_steps,
+            max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
+        )
+
+        # Quote agent has no sub-agents, so no interception needed — just save to DB
+        async def on_quote_tool_call(
+            tool_name: str,
+            tool_input: dict,
+            tool_output: dict,
+            success: bool,
+            latency_ms: int,
+        ) -> None:
+            record = ToolCall(
+                message_id=inbound_message_id,
+                tool_name=tool_name,
+                input=tool_input,
+                output=tool_output,
+                success=success,
+                latency_ms=latency_ms,
             )
+            db.add(record)
+            db.commit()
+
+        try:
+            result = await runner.run([], subagent_input, on_tool_call=on_quote_tool_call)
 
             # Parse JSON from subagent response
-            raw_text = (response.text or "").strip()
+            raw_text = (result.text or "").strip()
             try:
-                result = json.loads(raw_text)
+                parsed = json.loads(raw_text)
             except (json.JSONDecodeError, TypeError):
                 logger.warning(
                     "quote_subagent_invalid_json",
                     extra={"correlation_id": correlation_id, "raw_text": raw_text[:200]},
                 )
-                result = {
+                parsed = {
                     "status": "manual_review",
                     "message_to_customer": "Em cần kiểm tra thêm để báo giá chính xác. Anh/chị vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ.",
                     "reason": "quote_subagent_invalid_json",
                     "raw_text": raw_text[:200],
                 }
 
-            return result
+            return parsed
 
         except Exception as e:
             logger.exception(
