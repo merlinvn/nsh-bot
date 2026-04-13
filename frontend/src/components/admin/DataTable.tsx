@@ -14,7 +14,8 @@ export function DataTable<T>({ data, columns }: DataTableProps<T>) {
   return (
     <Card>
       <CardContent className="p-0">
-        <table className="w-full">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[600px]">
           <thead>
             <tr className="border-b bg-gray-50 text-left">
               {columns.map((col) => (
@@ -36,7 +37,8 @@ export function DataTable<T>({ data, columns }: DataTableProps<T>) {
             ))}
           </tbody>
         </table>
-        {data.length === 0 && <div className="p-8 text-center text-gray-400">No data</div>}
+        {data.length === 0 && <div className="p-8 text-center text-gray-400">Không có dữ liệu</div>}
+      </div>
       </CardContent>
     </Card>
   );
