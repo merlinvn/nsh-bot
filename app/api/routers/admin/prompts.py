@@ -1,4 +1,5 @@
 """Admin prompts management router."""
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +32,7 @@ async def create_prompt(body: PromptCreate, db: AsyncSession = Depends(get_db)):
         name=body.name,
         template=body.template,
         active_version="1",
-        versions=[{"version": 1, "template": body.template}],
+        versions=[{"version": 1, "template": body.template, "created_at": datetime.now(timezone.utc).isoformat()}],
     )
     db.add(prompt)
     await db.commit()
@@ -49,7 +50,10 @@ async def get_prompt(name: str, db: AsyncSession = Depends(get_db)):
         "name": prompt.name,
         "active_version": int(prompt.active_version),
         "template": prompt.template,
-        "versions": prompt.versions,
+        "versions": [
+            {**v, "created_at": v.get("created_at") or prompt.updated_at.isoformat()}
+            for v in (prompt.versions or [])
+        ],
     }
 
 
@@ -67,7 +71,9 @@ async def update_prompt(name: str, body: PromptUpdate, db: AsyncSession = Depend
     new_version = max_version + 1
 
     # Add new version
-    current_versions.append({"version": new_version, "template": body.template})
+    current_versions.append(
+        {"version": new_version, "template": body.template, "created_at": datetime.now(timezone.utc).isoformat()}
+    )
     prompt.versions = current_versions
     prompt.template = body.template
     prompt.active_version = str(new_version)
@@ -102,7 +108,9 @@ async def create_version(name: str, body: VersionCreate, db: AsyncSession = Depe
     new_version = max_version + 1
 
     template = body.template if body.template else prompt.template
-    current_versions.append({"version": new_version, "template": template})
+    current_versions.append(
+        {"version": new_version, "template": template, "created_at": datetime.now(timezone.utc).isoformat()}
+    )
     prompt.versions = current_versions
     await db.commit()
     return {"version": new_version}
@@ -140,7 +148,7 @@ async def list_versions(name: str, db: AsyncSession = Depends(get_db)):
         {
             "version": v.get("version"),
             "template": v.get("template"),
-            "created_at": prompt.updated_at.isoformat(),
+            "created_at": v.get("created_at") or prompt.updated_at.isoformat(),
             "active": v.get("version") == current_active,
         }
         for v in versions
