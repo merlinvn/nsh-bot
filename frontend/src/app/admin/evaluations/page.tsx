@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   useEvaluations,
   useEvaluation,
+  usePrompts,
   useCreateEvaluation,
   useDeleteEvaluation,
   useAddEvaluationTestCase,
@@ -11,8 +12,8 @@ import {
 } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
@@ -23,6 +24,7 @@ export default function EvaluationsPage() {
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: evaluations, isLoading } = useEvaluations();
+  const { data: prompts, isLoading: promptsLoading } = usePrompts();
   const { data: current, isLoading: detailLoading } = useEvaluation(selectedId);
 
   const createMutation = useCreateEvaluation();
@@ -96,12 +98,27 @@ export default function EvaluationsPage() {
                 <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="VD: Prompt v2 test" />
               </div>
               <div className="space-y-1">
-                <Label>Tên prompt</Label>
-                <Input value={newPromptName} onChange={(e) => setNewPromptName(e.target.value)} placeholder="VD: system" />
+                <Label>Prompt</Label>
+                {promptsLoading ? (
+                  <div className="h-9 bg-gray-100 rounded animate-pulse" />
+                ) : (
+                  <Select value={newPromptName} onValueChange={(v) => v && setNewPromptName(v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn prompt" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {prompts?.map((p) => (
+                        <SelectItem key={p.name} value={p.name}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleCreate} disabled={createMutation.isPending}>Tạo</Button>
+              <Button onClick={handleCreate} disabled={createMutation.isPending || !newName.trim() || !newPromptName}>Tạo</Button>
               <Button variant="outline" onClick={() => setShowCreate(false)}>Hủy</Button>
             </div>
           </CardContent>
