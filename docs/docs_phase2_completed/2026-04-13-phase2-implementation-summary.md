@@ -104,8 +104,7 @@ rabbitmq               (ports 5672, 15672)
 ## Remaining Work
 
 - **Zalo OAuth callback**: `POST /admin/zalo-tokens/callback` is a stub. OAuth PKCE flow requires Zalo app configuration.
-- **ConversationWorker migration**: Could migrate to `llm.process` queue in future for full LLM call observability.
-- **Worker heartbeat**: `monitoring/workers` endpoint returns empty list — heartbeat keys exist but aren't queried.
+- **Worker heartbeat**: ✅ FIXED (2026-04-13) — llm-worker now has heartbeat, all three workers visible in monitoring.
 
 ---
 
@@ -114,13 +113,13 @@ rabbitmq               (ports 5672, 15672)
 ```
 app/
 ├── workers/
-│   ├── llm/                    # NEW: LLMWorker for playground + evaluation
-│   │   ├── processor.py        # LLMProcessor (channel-based routing)
+│   ├── llm/                    # LLMWorker for all LLM calls (playground + evaluation + zalo)
+│   │   ├── processor.py        # LLMProcessor (channel-based routing: zalo/playground/evaluation)
 │   │   ├── consumer.py         # RabbitMQ consumer for llm.process
 │   │   └── main.py             # Worker entry point (port 8082)
 │   ├── conversation/
-│   │   ├── agent.py            # AgentRunner (shared LLM loop)
-│   │   ├── processor.py        # ConversationProcessor (uses AgentRunner)
+│   │   ├── agent.py            # AgentRunner (shared LLM loop, still used by LLMProcessor)
+│   │   ├── processor.py        # ConversationProcessor (publishes to llm.process, waits Redis)
 │   │   └── consumer.py        # conversation.process consumer
 │   └── outbound/
 │       └── consumer.py         # outbound.send consumer
