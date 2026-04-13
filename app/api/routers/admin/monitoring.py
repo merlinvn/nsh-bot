@@ -178,7 +178,7 @@ async def queue_status(
                 all_queues = resp.json()
                 for q in all_queues:
                     name = q.get("name", "")
-                    if "neochat" in name or name in ("conversation.process", "outbound.send"):
+                    if "neochat" in name or name in ("conversation.process", "outbound.send", "llm.process"):
                         msgs = q.get("messages", 0)
                         # message_stats contains rate info
                         stats = q.get("message_stats", {}) or {}
