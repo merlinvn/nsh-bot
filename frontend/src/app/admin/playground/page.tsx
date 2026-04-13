@@ -132,11 +132,11 @@ export default function PlaygroundPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left: Config + Input */}
-        <Card>
+        <Card className="h-full min-h-0">
           <CardHeader>
             <CardTitle>Cấu hình</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="flex flex-col space-y-4 min-h-0 flex-1">
             {/* Prompt selector */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -191,15 +191,14 @@ export default function PlaygroundPage() {
               </div>
             </div>
 
-            {/* System prompt */}
-            <div className="space-y-1">
+            {/* System prompt — fills remaining space */}
+            <div className="flex-1 min-h-0 flex flex-col space-y-1">
               <Label>System Prompt</Label>
               <Textarea
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
-                rows={8}
                 placeholder="System prompt sẽ được tải từ prompt đã chọn..."
-                className="font-mono text-sm"
+                className="font-mono text-sm flex-1 resize-none min-h-0"
               />
             </div>
 
@@ -209,8 +208,14 @@ export default function PlaygroundPage() {
               <Textarea
                 value={userMessage}
                 onChange={(e) => setUserMessage(e.target.value)}
-                rows={3}
-                placeholder="Nhập tin nhắn để test..."
+                rows={2}
+                placeholder="Nhập tin nhắn để test... (Enter để gửi, Shift+Enter để xuống dòng)"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e as unknown as React.FormEvent);
+                  }
+                }}
               />
             </div>
 
