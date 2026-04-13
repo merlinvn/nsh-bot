@@ -146,15 +146,120 @@ Caddy handles TLS automatically using Let's Encrypt. For Cloudflare-managed DNS:
 
 ## Database Migrations
 
+Database schema managed via Alembic. Migrations live in `alembic/versions/`.
+
+### Run Migrations
+
 ```bash
-# Run pending migrations
+# Run all pending migrations (upgrade to latest)
 docker-compose exec api uv run alembic upgrade head
 
-# Create a new migration
-docker-compose exec api uv run alembic revision --autogenerate -m "description"
+# Upgrade one step at a time
+docker-compose exec api uv run alembic upgrade +1
 
 # Check current version
 docker-compose exec api uv run alembic current
+
+# Show migration history
+docker-compose exec api uv run alembic history
+```
+
+### Rollback
+
+```bash
+# Rollback one migration
+docker-compose exec api uv run alembic downgrade -1
+
+# Rollback to a specific revision
+docker-compose exec api uv run alembic downgrade <revision_id>
+
+# Rollback all migrations (nuke schema)
+docker-compose exec api uv run alembic downgrade base
+```
+
+### Create Migration
+
+When changing models in `app/models/`:
+
+```bash
+# Auto-generate migration from model changes
+docker-compose exec api uv run alembic revision --autogenerate -m "describe change"
+
+# Create empty migration (manual SQL)
+docker-compose exec api uv run alembic revision -m "describe change"
+```
+
+Then edit the generated file in `alembic/versions/` to review/customize before applying.
+
+### Reset Database (Development Only)
+
+⚠️ **This destroys all data. Never do this in production.**
+
+```bash
+# Drop all tables and recreate from scratch
+docker-compose exec api uv run alembic downgrade base
+docker-compose exec api uv run alembic upgrade head
+
+# Recreate admin user after reset
+docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
+  --username admin --password 'YourPassword'
+```
+
+### Verify Schema
+
+```bash
+# Check if schema matches models (no pending migrations)
+docker-compose exec api uv run alembic upgrade head --check
+
+# Show SQL that would run without executing
+docker-compose exec api uv run alembic upgrade head --sql
+```
+
+---
+
+## Admin User Management
+
+### Create Admin User
+
+```bash
+docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
+  --username admin --password 'YourPassword'
+```
+
+### Change Admin Password
+
+```bash
+# Via CLI
+docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
+  --username admin --password 'NewPassword'
+
+# Or via API (while logged in)
+curl -X POST https://yourdomain.com/api/auth/password \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: <your_csrf_token>" \
+  -b <session_cookie> \
+  -d '{"current_password":"OldPassword","new_password":"NewPassword"}'
+```
+
+### Reset Admin Password (Forgot)
+
+If you lost admin access, reset via database:
+
+```bash
+# Get into postgres
+docker-compose exec postgres psql -U neochat -d neochat
+
+# In psql, update password hash (requires bcrypt hash of new password)
+# Generate hash locally: python -c "import bcrypt; print(bcrypt.hashpw(b'NewPass', bcrypt.gensalt()).decode())"
+UPDATE admin_users SET password_hash = '<bcrypt_hash>' WHERE username = 'admin';
+\q
+```
+
+Or delete and recreate:
+
+```bash
+docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
+  --username admin --password 'NewPassword' --force
 ```
 
 ---
