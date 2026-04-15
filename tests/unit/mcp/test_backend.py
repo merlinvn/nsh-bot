@@ -3,29 +3,26 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from app.workers.mcp.backend import MCPToolBackend, TOOL_HANDLERS
+from app.workers.mcp.backend import MCPToolBackend, MCP_TOOL_HANDLERS
 
 
 class TestMCPToolBackend:
-    def test_unknown_tool_raises(self):
+    @pytest.mark.asyncio
+    async def test_unknown_tool_raises(self):
         backend = MCPToolBackend()
-        with pytest.raises(ValueError, match="Unknown MCP tool"):
-            # Need to run it - it's async
-            import asyncio
-            asyncio.get_event_loop().run_until_complete(
-                backend.call("unknown_tool", {})
-            )
+        with pytest.raises(ValueError, match="Unknown tool"):
+            await backend.call("unknown_tool", {})
 
     @pytest.mark.asyncio
     async def test_calculate_shipping_quote_unknown_tool_raises(self):
         backend = MCPToolBackend()
-        with pytest.raises(ValueError, match="Unknown MCP tool: nonexistent"):
+        with pytest.raises(ValueError, match="Unknown tool"):
             await backend.call("nonexistent", {"service_type": "fast"})
 
     @pytest.mark.asyncio
     async def test_tool_handlers_registered(self):
-        assert "calculate_shipping_quote" in TOOL_HANDLERS
-        assert "explain_quote_breakdown" in TOOL_HANDLERS
+        assert "calculate_shipping_quote" in MCP_TOOL_HANDLERS
+        assert "explain_quote_breakdown" in MCP_TOOL_HANDLERS
 
 
 class TestMcpEngineIntegration:

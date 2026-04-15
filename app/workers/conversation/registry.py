@@ -9,6 +9,7 @@ Architecture:
 
 This enables:
 - Multiple agent tool sets (MAIN_AGENT_TOOLS)
+- MCP tools (calculate_shipping_quote, explain_quote_breakdown) are served via MCPToolBackend, not the registry
 - Multi-tenant tool filtering per agent/tenant
 - Swap LocalToolBackend for MCPToolBackend without changing executor
 """
@@ -186,10 +187,7 @@ def _bootstrap_defaults(registry: ToolRegistry) -> None:
     """Register all Phase 1 tools with the registry."""
     from app.workers.conversation import handlers
     from app.workers.conversation.tools_models import (
-        CalculateShippingQuoteInput,
         CreateSupportTicketInput,
-        DelegateToQuoteAgentInput,
-        ExplainQuoteBreakdownInput,
         GetOrderStatusInput,
         HandoffRequestInput,
         LookupCustomerInput,
@@ -248,45 +246,6 @@ def _bootstrap_defaults(registry: ToolRegistry) -> None:
             enabled=True,
             tags=("handoff",),
         ),
-        ToolSpec(
-            name="delegate_to_quote_agent",
-            description=(
-                "Delegate to the quote subagent to calculate shipping rates. "
-                "Use when the customer wants a shipping quote. "
-                "Pass customer_message and any known_context (weight, dimensions, service_type)."
-            ),
-            input_model=DelegateToQuoteAgentInput,
-            handler=handlers.delegate_to_quote_agent,
-            timeout_seconds=3.0,
-            enabled=True,
-            tags=("delegation",),
-        ),
-        ToolSpec(
-            name="calculate_shipping_quote",
-            description=(
-                "Calculate shipping cost based on weight, dimensions, and service type. "
-                "Returns a structured quote with status, message_to_customer, and quote_data. "
-                "Supports service types: fast, standard, bundle, lot."
-            ),
-            input_model=CalculateShippingQuoteInput,
-            handler=handlers.calculate_shipping_quote,
-            timeout_seconds=5.0,
-            enabled=True,
-            tags=("shipping", "quote"),
-        ),
-        ToolSpec(
-            name="explain_quote_breakdown",
-            description=(
-                "Explain in detail how the shipping cost was calculated, in Vietnamese. "
-                "Use when a customer asks 'tại sao giá thế?' or wants pricing breakdown. "
-                "Same inputs as calculate_shipping_quote."
-            ),
-            input_model=ExplainQuoteBreakdownInput,
-            handler=handlers.explain_quote_breakdown,
-            timeout_seconds=5.0,
-            enabled=True,
-            tags=("shipping", "quote"),
-        ),
     ]
 
     for spec in specs:
@@ -304,6 +263,4 @@ MAIN_AGENT_TOOLS = frozenset({
     "get_order_status",
     "create_support_ticket",
     "handoff_request",
-    "calculate_shipping_quote",
-    "explain_quote_breakdown",
 })

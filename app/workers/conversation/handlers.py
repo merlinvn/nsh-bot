@@ -1,13 +1,7 @@
-"""Tool handler functions for the conversation worker.
+"""Tool handler functions for non-MCP tools (customer lookup, order status, support, handoff).
 
-Each handler is a module-level async function that receives a **validated
-Pydantic input model** and returns a dict. The validation is performed by
-LocalToolBackend before the handler is called, so handlers can assume their
-inputs conform to the schema — no None checks or type casting needed.
-
-This separation allows handlers to be swapped independently of the executor,
-and makes it straightforward to replace a local handler with an MCP-backed
-or HTTP-backed one in the future.
+MCP tools (calculate_shipping_quote, explain_quote_breakdown) are served via MCPToolBackend.
+These handlers remain for tools that have not yet been migrated to MCP.
 """
 
 from __future__ import annotations
@@ -18,10 +12,7 @@ from typing import Any
 
 from app.workers.shared.logging import get_logger
 from app.workers.conversation.tools_models import (
-    CalculateShippingQuoteInput,
     CreateSupportTicketInput,
-    DelegateToQuoteAgentInput,
-    ExplainQuoteBreakdownInput,
     GetOrderStatusInput,
     HandoffRequestInput,
     LookupCustomerInput,
@@ -163,48 +154,3 @@ async def handoff_request(input: HandoffRequestInput) -> dict:
         "message": "Yêu cầu chuyển đã được ghi nhận. Đại diện chăm sóc khách hàng sẽ liên hệ sớm.",
         "estimated_wait": "5-10 phút",
     }
-
-
-# ---------------------------------------------------------------------------
-# New Phase 1 tools
-# ---------------------------------------------------------------------------
-
-
-async def delegate_to_quote_agent(input: DelegateToQuoteAgentInput) -> dict:
-    """Delegate to the quote subagent.
-
-    Returns a marker dict that the processor uses to invoke the quote subagent.
-    The processor intercepts this marker and runs the quote agent loop.
-    """
-    return {
-        "delegated": True,
-        "customer_message": input.customer_message,
-        "known_context": input.known_context,
-        "reason": input.reason,
-    }
-
-
-async def calculate_shipping_quote(input: CalculateShippingQuoteInput) -> dict:
-    """Calculate shipping quote via MCP engine (pricing engine + Redis cache).
-
-    This handler delegates to MCPToolBackend which handles:
-    - Config loading from JSON
-    - Redis cache-aside
-    - Engine pricing calculation
-    """
-    from app.workers.mcp.backend import MCPToolBackend
-
-    backend = MCPToolBackend()
-    return await backend.call("calculate_shipping_quote", input.model_dump())
-
-
-async def explain_quote_breakdown(input: ExplainQuoteBreakdownInput) -> dict:
-    """Explain shipping quote pricing breakdown in Vietnamese.
-
-    Delegates to MCP engine which computes the quote and formats
-    the explanation in Vietnamese prose.
-    """
-    from app.workers.mcp.backend import MCPToolBackend
-
-    backend = MCPToolBackend()
-    return await backend.call("explain_quote_breakdown", input.model_dump())

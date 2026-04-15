@@ -15,8 +15,7 @@ from app.models.evaluation import EvaluationTestCase, PromptEvaluation
 from app.models.prompt import Prompt
 from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import create_llm_client
-from app.workers.conversation.registry import get_registry
-from app.workers.mcp.backend import MCPToolBackend
+from app.workers.mcp.client import MCPClient
 from app.workers.conversation.tools import ToolExecutor
 
 MAX_LLM_STEPS = 3
@@ -53,8 +52,8 @@ class LLMProcessor:
 
     def __init__(self) -> None:
         self._llm = None
-        backend = MCPToolBackend()
-        self._tool_executor = ToolExecutor(backend)
+        self._mcp_client = MCPClient()
+        self._tool_executor = ToolExecutor(self._mcp_client.backend)
 
     def _get_llm(self):
         if self._llm is None:
@@ -118,15 +117,13 @@ class LLMProcessor:
         conversation_history = payload.get("conversation_history", [])
         inbound_text = payload.get("inbound_text", "")
 
-        backend = MCPToolBackend()
-        tool_executor = ToolExecutor(backend)
-        registry = get_registry()
+        tool_executor = ToolExecutor(self._mcp_client.backend)
 
         runner = AgentRunner(
             llm=self._get_llm(),
             tool_executor=tool_executor,
             system_prompt=system_prompt,
-            tool_definitions=registry.definitions(),
+            tool_definitions=self._mcp_client.list_tools(),
             max_steps=MAX_LLM_STEPS,
             max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
         )
@@ -184,15 +181,13 @@ class LLMProcessor:
 
         conversation_history = messages + [{"role": "user", "content": new_message}]
 
-        backend = MCPToolBackend()
-        tool_executor = ToolExecutor(backend)
-        registry = get_registry()
+        tool_executor = ToolExecutor(self._mcp_client.backend)
 
         runner = AgentRunner(
             llm=self._get_llm(),
             tool_executor=tool_executor,
             system_prompt=system_prompt,
-            tool_definitions=registry.definitions(),
+            tool_definitions=self._mcp_client.list_tools(),
             max_steps=MAX_LLM_STEPS,
             max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
         )
@@ -235,15 +230,13 @@ class LLMProcessor:
                 prompt_record = result.scalar_one_or_none()
                 system_prompt = prompt_record.template if prompt_record else ""
 
-        backend = MCPToolBackend()
-        tool_executor = ToolExecutor(backend)
-        registry = get_registry()
+        tool_executor = ToolExecutor(self._mcp_client.backend)
 
         runner = AgentRunner(
             llm=self._get_llm(),
             tool_executor=tool_executor,
             system_prompt=system_prompt,
-            tool_definitions=registry.definitions(),
+            tool_definitions=self._mcp_client.list_tools(),
             max_steps=MAX_LLM_STEPS,
             max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
         )

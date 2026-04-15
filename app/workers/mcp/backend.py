@@ -1,4 +1,8 @@
-"""MCPToolBackend — implements ToolBackend protocol for MCP tools."""
+"""MCPToolBackend — implements ToolBackend protocol for all tools (MCP + registry).
+
+Routes MCP tools to the pricing engine, non-MCP tools to the registry handlers.
+This is the single tool execution path for LLMProcessor.
+"""
 
 from __future__ import annotations
 
@@ -14,41 +18,48 @@ if TYPE_CHECKING:
 
 logger = get_logger("mcp.backend")
 
-
-TOOL_HANDLERS: dict[str, Any] = {
+# MCP tool handlers — these go to the pricing engine
+MCP_TOOL_HANDLERS: dict[str, Any] = {
     "calculate_shipping_quote": mcp_calculate_shipping_quote,
     "explain_quote_breakdown": mcp_explain_quote_breakdown,
 }
 
 
 class MCPToolBackend:
-    """MCP tool backend — implements ToolBackend protocol.
+    """Single tool execution backend for all tools.
 
-    Routes tool calls to the MCP engine layer which handles
-    cache-aside + pricing engine computation.
+    MCP tools: delegate to pricing engine (cache-aside + Redis)
+    Non-MCP tools: delegate to LocalToolBackend (registry handlers)
     """
 
     def __init__(self, tenant_id: str = "nsh") -> None:
         self._tenant_id = tenant_id
+        self._local_backend: "LocalToolBackend | None" = None
+
+    def _get_local_backend(self) -> "LocalToolBackend":
+        """Lazily create LocalToolBackend for non-MCP tools."""
+        if self._local_backend is None:
+            from app.workers.conversation.registry import get_registry, LocalToolBackend
+            self._local_backend = LocalToolBackend(get_registry())
+        return self._local_backend
 
     async def call(self, tool_name: str, tool_input: dict) -> dict[str, Any]:
-        """Execute a tool via MCP engine + Redis cache.
+        """Execute a tool (MCP or registry-based).
 
         Raises:
-            ValueError: if the tool is unknown or disabled.
+            ValueError: if the tool is unknown.
             asyncio.TimeoutError: if the tool exceeds its timeout.
         """
-        handler = TOOL_HANDLERS.get(tool_name)
-        if handler is None:
-            raise ValueError(f"Unknown MCP tool: {tool_name}")
-
-        redis_client = await get_redis_client()
-
-        try:
+        handler = MCP_TOOL_HANDLERS.get(tool_name)
+        if handler is not None:
+            redis_client = await get_redis_client()
             return await asyncio.wait_for(
                 handler(redis_client, tool_input, tenant_id=self._tenant_id),
                 timeout=5.0,
             )
-        except asyncio.TimeoutError:
-            logger.error("mcp_tool_timeout", extra={"tool_name": tool_name})
-            raise
+
+        # Non-MCP tool — delegate to registry
+        return await asyncio.wait_for(
+            self._get_local_backend().call(tool_name, tool_input),
+            timeout=5.0,
+        )
