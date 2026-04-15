@@ -1,6 +1,6 @@
 # NeoChat Platform — System Specification
 
-**Last Updated:** 2026-04-13
+**Last Updated:** 2026-04-15
 **Status:** Phase 2 (mostly complete)
 
 ---
@@ -96,7 +96,7 @@ All external traffic goes through Caddy (ports 80/443):
 |---------|--------|------------|----------|
 | `playground` | API (`/api/playground/chat`) | `AgentRunner` + tools | Redis pub/sub |
 | `evaluation` | API (`/api/evaluations/{id}/run`) | `AgentRunner` + LLM judge | DB update + Redis pub/sub |
-| `zalo` | ConversationWorker | `AgentRunner` + tools + quote subagent | Redis pub/sub + DB update |
+| `zalo` | ConversationWorker | `AgentRunner` + MCP tools | Redis pub/sub + DB update |
 
 - **Heartbeat key:** `worker:heartbeat:llm-worker`
 
@@ -141,7 +141,7 @@ All LLM calls go through `llm.process` with a `channel` field that determines re
 
 - **Source:** ConversationWorker (not API)
 - **Payload:** `inbound_message_id`, `outbound_message_id`, `system_prompt`, `conversation_history`, `inbound_text`
-- **Worker:** `LLMProcessor._process_zalo()` — runs `AgentRunner` with tool call recording + quote subagent, updates outbound `Message` in DB, publishes to Redis
+- **Worker:** `LLMProcessor._process_zalo()` — runs `AgentRunner` with MCP tools (`calculate_shipping_quote`, `explain_quote_breakdown`), records ToolCalls in DB, publishes to Redis
 - **Response:** `{text, token_usage, latency_ms}`
 - **Note:** ConversationWorker handles `outbound.send` publish after receiving Redis response
 
@@ -272,32 +272,24 @@ Shared LLM loop used by LLMWorker for all channels.
 
 - **Max steps:** 3
 - **Max tool calls per step:** 2
-- **Tool interception:** `delegate_to_quote_agent` — intercepted by `on_tool_call`, replaced with quote subagent result
+- **Tool backend:** `MCPToolBackend` — implements `ToolBackend` protocol, routes to MCP engine
 - **Tool call recording:** Persisted to `tool_calls` table via `on_tool_call` callback
 
 ### Tools
 
 Available tools defined in `app/workers/conversation/registry.py`:
 
-- `calculate_shipping_quote` — Calculate shipping quote
-- `get_delivery_date` — Estimate delivery date
-- `track_order` — Track order status
-- `delegate_to_quote_agent` — Delegate to quote subagent (intercepted)
-- (others per `MAIN_AGENT_TOOLS` and `QUOTE_AGENT_TOOLS`)
+- `lookup_customer` — Find customer by phone/name
+- `get_order_status` — Query order status
+- `create_support_ticket` — Open support ticket
+- `handoff_request` — Flag for human handoff
+- `calculate_shipping_quote` — Calculate shipping quote (via MCP engine)
+- `explain_quote_breakdown` — Explain pricing in Vietnamese (via MCP engine)
 
-### Quote Subagent
+### Pricing Engine + MCP
 
-Runs with `calculate_shipping_quote` tool only. Returns structured JSON:
-```json
-{
-  "status": "success" | "manual_review" | "error",
-  "message_to_customer": "...",
-  "quote_amount": 45000,
-  "delivery_days": 3,
-  "reason": "...",
-  "raw_text": "..."
-}
-```
+`app/workers/engine/pricing.py` — pure `QuoteInput → QuoteResult`, no I/O.
+`app/workers/mcp/backend.py` — `MCPToolBackend` with Redis cache-aside (900s TTL).
 
 ---
 
@@ -311,6 +303,7 @@ Runs with `calculate_shipping_quote` tool only. Returns structured JSON:
 | `worker:heartbeat:{name}` | Worker alive signal | none (detected by age) |
 | `llm:response:{request_id}` | LLM response pub/sub channel | none |
 | `monitoring:metrics:prev` | Previous metrics for trend | 60s |
+| `quote:{tenant_id}:{hash}` | Shipping quote cache | 900s |
 
 ---
 
@@ -370,4 +363,4 @@ docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
 
 - **LLM Judge (Evaluation):** Each test case judged by second LLM call asking if actual answer semantically matches expected. Returns Vietnamese PASS/FAIL with reasoning.
 
-- **Future: MCP integration:** Tool call and subagent system will be replaced by MCP (Model Context Protocol) in a future phase.
+- **MCP Architecture:** `app/workers/engine/` — pure pricing logic. `app/workers/mcp/` — MCP server with `MCPToolBackend` (ToolBackend protocol impl). Tenant pricing in `config/tenants/{tenant_id}/pricing_rules.json`. Quote caching via Redis (900s TTL).

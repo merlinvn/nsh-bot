@@ -5,7 +5,6 @@ import pytest
 from app.workers.conversation import handlers
 from app.workers.conversation.registry import (
     MAIN_AGENT_TOOLS,
-    QUOTE_AGENT_TOOLS,
     ToolRegistry,
     ToolSpec,
     LocalToolBackend,
@@ -216,12 +215,8 @@ def test_main_agent_tools_has_expected():
     assert "get_order_status" in MAIN_AGENT_TOOLS
     assert "create_support_ticket" in MAIN_AGENT_TOOLS
     assert "handoff_request" in MAIN_AGENT_TOOLS
-    assert "delegate_to_quote_agent" in MAIN_AGENT_TOOLS
-
-
-def test_quote_agent_tools():
-    """QUOTE_AGENT_TOOLS contains calculate_shipping_quote."""
-    assert "calculate_shipping_quote" in QUOTE_AGENT_TOOLS
+    assert "calculate_shipping_quote" in MAIN_AGENT_TOOLS
+    assert "explain_quote_breakdown" in MAIN_AGENT_TOOLS
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ Architecture:
 - get_registry(): singleton accessor, bootstraps defaults on first call
 
 This enables:
-- Multiple agent tool sets (MAIN_AGENT_TOOLS, QUOTE_AGENT_TOOLS)
+- Multiple agent tool sets (MAIN_AGENT_TOOLS)
 - Multi-tenant tool filtering per agent/tenant
 - Swap LocalToolBackend for MCPToolBackend without changing executor
 """
@@ -189,6 +189,7 @@ def _bootstrap_defaults(registry: ToolRegistry) -> None:
         CalculateShippingQuoteInput,
         CreateSupportTicketInput,
         DelegateToQuoteAgentInput,
+        ExplainQuoteBreakdownInput,
         GetOrderStatusInput,
         HandoffRequestInput,
         LookupCustomerInput,
@@ -273,6 +274,19 @@ def _bootstrap_defaults(registry: ToolRegistry) -> None:
             enabled=True,
             tags=("shipping", "quote"),
         ),
+        ToolSpec(
+            name="explain_quote_breakdown",
+            description=(
+                "Explain in detail how the shipping cost was calculated, in Vietnamese. "
+                "Use when a customer asks 'tại sao giá thế?' or wants pricing breakdown. "
+                "Same inputs as calculate_shipping_quote."
+            ),
+            input_model=ExplainQuoteBreakdownInput,
+            handler=handlers.explain_quote_breakdown,
+            timeout_seconds=5.0,
+            enabled=True,
+            tags=("shipping", "quote"),
+        ),
     ]
 
     for spec in specs:
@@ -290,9 +304,6 @@ MAIN_AGENT_TOOLS = frozenset({
     "get_order_status",
     "create_support_ticket",
     "handoff_request",
-    "delegate_to_quote_agent",
-})
-
-QUOTE_AGENT_TOOLS = frozenset({
     "calculate_shipping_quote",
+    "explain_quote_breakdown",
 })

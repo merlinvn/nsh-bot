@@ -109,7 +109,23 @@ elif channel == "zalo":
 - Shared between ConversationWorker, Playground, and Evaluation
 - `app/workers/conversation/agent.py`: `AgentRunner` class with `on_tool_call` callback
 - Max 3 steps, max 2 tool calls per step
-- `on_tool_call`: intercepts `delegate_to_quote_agent` for quote subagent, persists ToolCall records to DB
+- `on_tool_call`: persists ToolCall records to DB
+
+### Pricing Engine + MCP Architecture
+
+Pricing logic extracted into `app/workers/engine/`:
+- `pricing.py` — pure `QuoteInput → QuoteResult` calculation, no I/O
+- `config.py` — tenant JSON config loader (`config/tenants/{tenant_id}/pricing_rules.json`)
+- `cache.py` — Redis cache-aside, SHA256 key, 900s TTL, fail-open
+
+MCP layer in `app/workers/mcp/`:
+- `server.py` — JSON-RPC 2.0 MCP protocol (in-process)
+- `tools.py` — MCP tool definitions
+- `engine.py` — MCP → engine binding
+- `backend.py` — `MCPToolBackend` implementing `ToolBackend` protocol
+
+Two MCP tools: `calculate_shipping_quote`, `explain_quote_breakdown`.
+Agent calls MCP tools directly (no subagent loop).
 
 ### Outbound
 - Send via `outbound.send` queue
@@ -242,7 +258,14 @@ tests/
 │   ├── test_processor.py
 │   ├── test_zalo_client.py
 │   ├── test_consumer.py
-│   └── test_health.py
+│   ├── test_health.py
+│   ├── engine/              # Pricing engine tests
+│   │   ├── test_pricing.py
+│   │   ├── test_config.py
+│   │   └── test_cache.py
+│   └── mcp/                 # MCP layer tests
+│       ├── test_tools.py
+│       └── test_backend.py
 └── integration/             # Integration tests (requires Docker)
     ├── conftest.py
     ├── models/

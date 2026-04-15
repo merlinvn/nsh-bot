@@ -10,7 +10,7 @@ Exports preserved for backward compatibility with existing imports:
 
 The actual tool execution infrastructure lives in registry.py:
 - ToolSpec, ToolRegistry, ToolBackend, LocalToolBackend
-- get_registry(), MAIN_AGENT_TOOLS, QUOTE_AGENT_TOOLS
+- get_registry(), MAIN_AGENT_TOOLS
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ TOOL_WHITELIST = frozenset([
     "handoff_request",
     "delegate_to_quote_agent",
     "calculate_shipping_quote",
+    "explain_quote_breakdown",
 ])
 
 

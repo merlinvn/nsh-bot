@@ -125,3 +125,30 @@ class CalculateShippingQuoteOutput(BaseModel):
     service_label: str | None = None
     minimum_chargeable: str | None = None
     error: str | None = None
+
+
+class ExplainQuoteBreakdownInput(BaseModel):
+    """Input for explain_quote_breakdown tool.
+
+    Same fields as calculate_shipping_quote — explains the pricing breakdown
+    in Vietnamese prose.
+    """
+    service_type: Literal["fast", "standard", "bundle", "lot"] = Field(
+        default="standard",
+        description="Service tier: fast, standard, bundle, or lot",
+    )
+    actual_weight_kg: float = Field(description="Package actual weight in kg (must be > 0)")
+    length_cm: float = Field(description="Package length in cm (must be > 0)")
+    width_cm: float = Field(description="Package width in cm (must be > 0)")
+    height_cm: float = Field(description="Package height in cm (must be > 0)")
+    product_category: str = Field(default="", description="Product category for surcharge calculation")
+    is_same_item_lot: bool = Field(default=False, description="Whether the lot is all the same item type")
+    is_fragile: bool = Field(default=False, description="Contains fragile items")
+    contains_battery: bool = Field(default=False, description="Contains battery")
+    contains_liquid: bool = Field(default=False, description="Contains liquid")
+    contains_powder: bool = Field(default=False, description="Contains powder")
+    is_medical_item: bool = Field(default=False, description="Is a medical item")
+    is_fake_or_branded_sensitive: bool = Field(default=False, description="Contains fake or branded-sensitive goods")
+    is_cosmetic: bool = Field(default=False, description="Is a cosmetic product")
+    needs_insurance: bool = Field(default=False, description="Customer wants insurance")
+    declared_goods_value_vnd: float = Field(default=0, description="Declared goods value in VND for insurance")

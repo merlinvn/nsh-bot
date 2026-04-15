@@ -6,10 +6,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.workers.conversation.processor import (
-    MAX_LLM_STEPS,
-    ConversationProcessor,
-)
+from app.workers.conversation.processor import ConversationProcessor
+from app.workers.llm.processor import MAX_LLM_STEPS
 from app.workers.conversation.types import LLMResponse, ToolCallResult
 
 

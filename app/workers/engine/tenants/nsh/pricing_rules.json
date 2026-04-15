@@ -1,0 +1,32 @@
+{
+  "tenant_id": "nsh",
+  "tiers": {
+    "fast": [[50, 68500], [150, 67500], [250, 66500], [350, 65500], [500, 64500]],
+    "standard": [[50, 52500], [150, 51500], [250, 40500], [350, 49500], [500, 48500]],
+    "bundle": [[50, 38000], [150, 37000], [250, 36000], [350, 35000], [500, 34000]],
+    "lot": [[150, 23500], [250, 22500], [350, 21500], [500, 20500]]
+  },
+  "volumetric_divisor": {
+    "fast": 6000,
+    "standard": 6000,
+    "bundle": 6000,
+    "lot": 5000
+  },
+  "eta": {
+    "fast": "3-6 ngày",
+    "standard": "5-9 ngày",
+    "bundle": "10-15 ngày",
+    "lot": "15-25 ngày"
+  },
+  "surcharges": {
+    "lot_clothing_per_kg": 3000,
+    "lot_fragile_per_kg": 7000
+  },
+  "insurance_rate": 0.05,
+  "discounts": {
+    "voucher_over_100kg": 125000
+  },
+  "max_chargeable_kg": 500,
+  "lot_minimum_kg": 50,
+  "cache_ttl_seconds": 900
+}

@@ -152,7 +152,8 @@ def test_tool_whitelist_contains_expected_tools():
     assert "handoff_request" in TOOL_WHITELIST
     assert "delegate_to_quote_agent" in TOOL_WHITELIST
     assert "calculate_shipping_quote" in TOOL_WHITELIST
-    assert len(TOOL_WHITELIST) == 6
+    assert "explain_quote_breakdown" in TOOL_WHITELIST
+    assert len(TOOL_WHITELIST) == 7
 
 
 def test_tool_definitions_count():
