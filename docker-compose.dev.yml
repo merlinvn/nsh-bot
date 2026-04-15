@@ -30,6 +30,7 @@ x-common-env: &common-env
   ADMIN_MAX_LOGIN_ATTEMPTS: ${ADMIN_MAX_LOGIN_ATTEMPTS:-5}
   ADMIN_LOCKOUT_MINUTES: ${ADMIN_LOCKOUT_MINUTES:-15}
   ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE: ${ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE:-10}
+  MCP_SERVER_URLS: ${MCP_SERVER_URLS:-http://nsh-mcp:8080}
 
 x-worker-env: &worker-env
   <<: *common-env
@@ -77,6 +78,28 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+  nsh-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    command: uvicorn app.workers.mcp.server:app --host 0.0.0.0 --port 8080
+    env_file:
+      - .env
+    environment:
+      <<: *common-env
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - ./app:/app/app:rw
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   api:
     build:

@@ -21,6 +21,7 @@ dependencies = [
     "anthropic>=0.42.0",
     # HTTP client
     "httpx>=0.28.0",
+    "requests>=2.32.0",
     # Logging
     "structlog>=24.4.0",
     # Metrics

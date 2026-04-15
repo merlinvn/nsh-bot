@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # Leave empty to process all users normally
     dev_zalo_user_id: str = ""
 
+    # MCP Server URL(s) — comma-separated list of MCP server URLs.
+    # MCPClient tries each URL in order and uses the first successful one.
+    # Example: http://nsh-mcp:8080,http://backup-mcp:8080
+    mcp_server_urls: str = "http://nsh-mcp:8080"
+
 
 _settings_instance: Settings | None = None
 
