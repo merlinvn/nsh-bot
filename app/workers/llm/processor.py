@@ -15,6 +15,7 @@ from app.models.evaluation import EvaluationTestCase, PromptEvaluation
 from app.models.prompt import Prompt
 from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import create_llm_client
+from app.workers.conversation.registry import get_registry
 from app.workers.mcp.backend import MCPToolBackend
 from app.workers.conversation.tools import ToolExecutor
 
@@ -119,6 +120,7 @@ class LLMProcessor:
 
         backend = MCPToolBackend()
         tool_executor = ToolExecutor(backend)
+        registry = get_registry()
 
         runner = AgentRunner(
             llm=self._get_llm(),
@@ -184,6 +186,7 @@ class LLMProcessor:
 
         backend = MCPToolBackend()
         tool_executor = ToolExecutor(backend)
+        registry = get_registry()
 
         runner = AgentRunner(
             llm=self._get_llm(),
@@ -234,6 +237,7 @@ class LLMProcessor:
 
         backend = MCPToolBackend()
         tool_executor = ToolExecutor(backend)
+        registry = get_registry()
 
         runner = AgentRunner(
             llm=self._get_llm(),
