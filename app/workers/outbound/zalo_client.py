@@ -1,5 +1,6 @@
 """Zalo API client for sending outbound messages."""
 import asyncio
+import re
 from typing import Any
 
 import httpx
@@ -7,6 +8,27 @@ import httpx
 from app.workers.shared.logging import get_logger
 
 logger = get_logger("zalo_client")
+
+
+def strip_markdown(text: str) -> str:
+    """Convert markdown formatting to plain text for Zalo send_text API.
+
+    Zalo's send_text only sends plain text — markdown like **bold** or *italic*
+    shows as literal characters. This strips common markdown patterns.
+    """
+    # Bold: **text** or __text__
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+    text = re.sub(r'__(.+?)__', r'\1', text)
+    # Italic: *text* or _text_ (but not inside words)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+    text = re.sub(r'(?<!_)_(?!_)(.+?)(?<!_)_(?!_)', r'\1', text)
+    # Strikethrough: ~~text~~
+    text = re.sub(r'~~(.+?)~~', r'\1', text)
+    # Inline code: `code`
+    text = re.sub(r'`(.+?)`', r'\1', text)
+    # HTML underline: <u>text</u>
+    text = re.sub(r'<u>(.+?)</u>', r'\1', text)
+    return text
 
 
 class RetryableError(Exception):
@@ -59,7 +81,7 @@ class ZaloClient:
         }
         payload = {
             "recipient": {"user_id": user_id},
-            "message": {"text": text},
+            "message": {"text": strip_markdown(text)},
         }
 
         logger.debug("Sending Zalo message", extra={"user_id": user_id, "text": text[:50]})

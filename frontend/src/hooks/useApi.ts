@@ -145,6 +145,7 @@ export function useUpdatePrompt(name: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["prompts"] });
       queryClient.invalidateQueries({ queryKey: ["prompt", name] });
+      queryClient.invalidateQueries({ queryKey: ["prompt-versions", name] });
     },
   });
 }
