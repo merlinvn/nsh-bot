@@ -83,7 +83,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mcp
-    command: uvicorn app.workers.mcp.server:app --host 0.0.0.0 --port 8080
+    command: uvicorn app.mcp.server:app --host 0.0.0.0 --port 8080
     env_file:
       - .env
     environment:

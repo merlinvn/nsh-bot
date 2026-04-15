@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.workers.mcp.pricing.pricing import PricingConfig
+from app.mcp.pricing.pricing import PricingConfig
 
 if TYPE_CHECKING:
-    from app.workers.mcp.pricing.pricing import PricingConfig
+    from app.mcp.pricing.pricing import PricingConfig
 
 _config_cache: dict[str, PricingConfig] = {}
 

@@ -15,7 +15,7 @@ from app.models.evaluation import EvaluationTestCase, PromptEvaluation
 from app.models.prompt import Prompt
 from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import create_llm_client
-from app.workers.mcp.client import MCPClient
+from app.mcp.client import MCPClient
 
 MAX_LLM_STEPS = 3
 MAX_TOOL_CALLS_PER_STEP = 2

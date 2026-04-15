@@ -20,8 +20,8 @@ import redis.asyncio as redis
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.workers.mcp import engine as shipping_engine
-from app.workers.mcp import customer, support
+from app.mcp import engine as shipping_engine
+from app.mcp import customer, support
 
 app = FastAPI(title="nsh-mcp")
 
@@ -35,7 +35,7 @@ TOOL_HANDLERS: dict[str, Any] = {
 
 
 def _get_tool_definitions() -> list[dict[str, Any]]:
-    from app.workers.mcp.tools import get_mcp_tool_definitions as shipping_tools
+    from app.mcp.tools import get_mcp_tool_definitions as shipping_tools
     return shipping_tools() + customer.get_tool_definitions() + support.get_tool_definitions()
 
 

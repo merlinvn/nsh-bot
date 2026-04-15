@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.workers.mcp.client import MCPHTTPBackend
+from app.mcp.client import MCPHTTPBackend
 
 # Alias so existing code that imports ToolExecutor still works.
 # MCPHTTPBackend calls the remote MCP server over HTTP.
