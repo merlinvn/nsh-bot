@@ -7,7 +7,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from app.workers.engine.pricing import QuoteInput, QuoteResult
+from app.workers.mcp.pricing.pricing import QuoteInput, QuoteResult
 
 if TYPE_CHECKING:
     import redis.asyncio
