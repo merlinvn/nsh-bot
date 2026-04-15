@@ -17,19 +17,26 @@ from app.workers.shared.zalo_token_manager import get_zalo_token_manager
 settings = get_settings()
 logger: object | None = None
 _shutdown_event = asyncio.Event()
+_consumer_running = True
 
 WORKER_HEALTH_PORT = int(settings.worker_metrics_port)
 
 
 class HealthHandler(BaseHTTPRequestHandler):
-    """Simple health endpoint for Docker healthcheck."""
+    """Health endpoint that reflects actual consumer state."""
 
     def do_GET(self):
         if self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"healthy")
+            if _consumer_running:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"healthy")
+            else:
+                self.send_response(503)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"unhealthy")
         else:
             self.send_response(404)
             self.end_headers()
@@ -80,7 +87,7 @@ async def _graceful_shutdown() -> None:
 
 async def main() -> None:
     """Worker entry point."""
-    global logger
+    global logger, _consumer_running
 
     # Setup structured logging
     logger = setup_logging(settings.log_level)
@@ -102,11 +109,15 @@ async def main() -> None:
     token_manager = get_zalo_token_manager()
     await token_manager.initialize_from_static_token()
 
+    _consumer_running = True
     try:
         await run_consumer()
     except asyncio.CancelledError:
         logger.info("Outbound worker cancelled")
+    except Exception:
+        logger.exception("Outbound worker consumer error")
     finally:
+        _consumer_running = False
         heartbeat_task.cancel()
         try:
             await heartbeat_task
