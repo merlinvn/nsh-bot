@@ -1,7 +1,7 @@
 """Standalone MCP HTTP server — JSON-RPC 2.0 over HTTP.
 
 Runs as a separate Docker service. All domain tools are registered here:
-- Shipping: calculate_shipping_quote, explain_quote_breakdown
+- Shipping: calculate_shipping_quote
 - Customer: lookup_customer, get_order_status
 - Support: create_support_ticket, handoff_request
 
@@ -16,8 +16,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import redis.asyncio as redis
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from nsh_mcp import engine as shipping_engine
@@ -32,11 +31,6 @@ TOOL_HANDLERS: dict[str, Any] = {
     "create_support_ticket": support.create_support_ticket,
     "handoff_request": support.handoff_request,
 }
-
-
-def _get_tool_definitions() -> list[dict[str, Any]]:
-    from nsh_mcp.tools import get_mcp_tool_definitions as shipping_tools
-    return shipping_tools() + customer.get_tool_definitions() + support.get_tool_definitions()
 
 
 @app.get("/health")
@@ -113,21 +107,7 @@ async def handle_rpc(request: Request) -> JSONResponse:
             )
 
         try:
-            # Shipping tools need redis + tenant_id
-            if tool_name == "calculate_shipping_quote":
-                tenant_id = params.get("tenant_id", "nsh")
-                redis_client = redis.from_url(
-                    "redis://redis:6379",
-                    encoding="utf-8",
-                    decode_responses=False,
-                )
-                result = await handler(
-                    redis_client,
-                    tool_input,
-                    tenant_id=tenant_id,
-                )
-            else:
-                result = await handler(tool_input)
+            result = await handler(tool_input)
 
             return JSONResponse(
                 content={
