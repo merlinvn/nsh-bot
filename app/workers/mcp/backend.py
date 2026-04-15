@@ -1,65 +1,86 @@
-"""MCPToolBackend — implements ToolBackend protocol for all tools (MCP + registry).
+"""MCPToolBackend — pure router for all MCP tool domains.
 
-Routes MCP tools to the pricing engine, non-MCP tools to the registry handlers.
-This is the single tool execution path for LLMProcessor.
+Routes to the correct domain handler:
+- Shipping: calculate_shipping_quote, explain_quote_breakdown
+- Customer: lookup_customer, get_order_status
+- Support: create_support_ticket, handoff_request
+
+No registry dependency. MCPToolBackend is the single execution entry point.
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from app.core.redis import get_redis_client
-from app.workers.mcp.engine import mcp_calculate_shipping_quote, mcp_explain_quote_breakdown
 from app.workers.shared.logging import get_logger
-
-if TYPE_CHECKING:
-    from app.workers.conversation.registry import ToolBackend
 
 logger = get_logger("mcp.backend")
 
-# MCP tool handlers — these go to the pricing engine
-MCP_TOOL_HANDLERS: dict[str, Any] = {
-    "calculate_shipping_quote": mcp_calculate_shipping_quote,
-    "explain_quote_breakdown": mcp_explain_quote_breakdown,
-}
-
 
 class MCPToolBackend:
-    """Single tool execution backend for all tools.
-
-    MCP tools: delegate to pricing engine (cache-aside + Redis)
-    Non-MCP tools: delegate to LocalToolBackend (registry handlers)
-    """
+    """Single tool execution backend — routes to domain MCP handlers."""
 
     def __init__(self, tenant_id: str = "nsh") -> None:
         self._tenant_id = tenant_id
-        self._local_backend: "LocalToolBackend | None" = None
+        self._handlers: dict[str, Any] | None = None
 
-    def _get_local_backend(self) -> "LocalToolBackend":
-        """Lazily create LocalToolBackend for non-MCP tools."""
-        if self._local_backend is None:
-            from app.workers.conversation.registry import get_registry, LocalToolBackend
-            self._local_backend = LocalToolBackend(get_registry())
-        return self._local_backend
+    def _get_handlers(self) -> dict[str, Any]:
+        """Lazily build the domain handler map."""
+        if self._handlers is None:
+            from app.workers.mcp.engine import (
+                mcp_calculate_shipping_quote,
+                mcp_explain_quote_breakdown,
+            )
+            from app.workers.mcp.customer import (
+                lookup_customer,
+                get_order_status,
+            )
+            from app.workers.mcp.support import (
+                create_support_ticket,
+                handoff_request,
+            )
+
+            self._handlers = {
+                # Shipping
+                "calculate_shipping_quote": mcp_calculate_shipping_quote,
+                "explain_quote_breakdown": mcp_explain_quote_breakdown,
+                # Customer
+                "lookup_customer": lookup_customer,
+                "get_order_status": get_order_status,
+                # Support
+                "create_support_ticket": create_support_ticket,
+                "handoff_request": handoff_request,
+            }
+        return self._handlers
+
+    async def execute(self, tool_name: str, tool_input: dict) -> dict[str, Any]:
+        """Alias of call() for ToolExecutor interface compatibility."""
+        return await self.call(tool_name, tool_input)
 
     async def call(self, tool_name: str, tool_input: dict) -> dict[str, Any]:
-        """Execute a tool (MCP or registry-based).
+        """Execute a tool via the correct domain handler.
 
         Raises:
             ValueError: if the tool is unknown.
             asyncio.TimeoutError: if the tool exceeds its timeout.
         """
-        handler = MCP_TOOL_HANDLERS.get(tool_name)
-        if handler is not None:
+        handlers = self._get_handlers()
+        handler = handlers.get(tool_name)
+        if handler is None:
+            raise ValueError(f"Unknown tool: {tool_name}")
+
+        # Shipping tools need redis + tenant_id
+        if tool_name in ("calculate_shipping_quote", "explain_quote_breakdown"):
+            from app.core.redis import get_redis_client
             redis_client = await get_redis_client()
             return await asyncio.wait_for(
                 handler(redis_client, tool_input, tenant_id=self._tenant_id),
                 timeout=5.0,
             )
 
-        # Non-MCP tool — delegate to registry
+        # Customer + support tools take plain input dict
         return await asyncio.wait_for(
-            self._get_local_backend().call(tool_name, tool_input),
+            handler(tool_input),
             timeout=5.0,
         )

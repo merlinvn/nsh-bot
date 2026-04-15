@@ -15,7 +15,7 @@ from app.workers.conversation.types import LLMResponse, ToolCallResult
 
 if TYPE_CHECKING:
     from app.workers.conversation.llm import BaseLLM
-    from app.workers.conversation.tools import ToolExecutor
+    from app.workers.mcp.backend import MCPToolBackend
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ class AgentRunner:
     def __init__(
         self,
         llm: "BaseLLM",
-        tool_executor: "ToolExecutor",
+        tool_executor: "MCPToolBackend",
         system_prompt: str,
         tool_definitions: list[dict[str, Any]],
         max_steps: int = 3,

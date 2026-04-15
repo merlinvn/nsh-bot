@@ -1,11 +1,12 @@
-"""MCPClient — unified tool definitions from MCP server + registry.
+"""MCPClient — unified tool definitions from all MCP domain servers.
 
-LLMProcessor uses this to get ALL tool definitions for AgentRunner,
-regardless of whether tools are MCP-based or registry-based.
+LLMProcessor uses this to get ALL tool definitions.
+All tools are now MCP-based (shipping, customer, support).
 """
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from app.workers.mcp.server import MCPServer
@@ -13,7 +14,7 @@ from app.workers.mcp.backend import MCPToolBackend
 
 
 class MCPClient:
-    """Unified tool provider: MCP tools + registry tools.
+    """Unified tool provider across all MCP domains.
 
     AgentRunner gets tool definitions from here.
     Tool execution goes through MCPToolBackend.
@@ -22,22 +23,15 @@ class MCPClient:
     def __init__(self, tenant_id: str = "nsh") -> None:
         self._server = MCPServer()
         self._backend = MCPToolBackend(tenant_id=tenant_id)
-        self._registry_definitions: list[dict[str, Any]] | None = None
+        self._tool_definitions: list[dict[str, Any]] | None = None
 
     def list_tools(self) -> list[dict[str, Any]]:
-        """Return all tool definitions: MCP tools + non-MCP registry tools.
-
-        Merges at call time so registry tools reflect current registry state.
-        """
-        # MCP tool definitions
-        mcp_tools = self._server._tool_definitions  # type: ignore[attr-defined]
-
-        # Registry tool definitions (non-MCP tools only)
-        from app.workers.conversation.registry import get_registry
-        registry = get_registry()
-        registry_tools = registry.definitions()
-
-        return mcp_tools + registry_tools
+        """Return all tool definitions from all MCP domains (sync cache)."""
+        if self._tool_definitions is None:
+            # _all_tool_definitions is sync, call directly
+            from app.workers.mcp.server import _all_tool_definitions
+            self._tool_definitions = _all_tool_definitions()
+        return self._tool_definitions
 
     @property
     def backend(self) -> MCPToolBackend:

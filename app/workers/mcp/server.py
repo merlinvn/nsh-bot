@@ -14,11 +14,19 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.workers.mcp.tools import get_mcp_tool_definitions
 from app.workers.mcp.backend import MCPToolBackend
 from app.workers.shared.logging import get_logger
 
 logger = get_logger("mcp.server")
+
+
+def _all_tool_definitions() -> list[dict[str, Any]]:
+    """Aggregate tool definitions from all MCP domains."""
+    from app.workers.mcp.tools import get_mcp_tool_definitions as shipping_tools
+    from app.workers.mcp.customer import get_tool_definitions as customer_tools
+    from app.workers.mcp.support import get_tool_definitions as support_tools
+
+    return shipping_tools() + customer_tools() + support_tools()
 
 
 class MCPServer:
@@ -40,7 +48,7 @@ class MCPServer:
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
                     "serverInfo": {
-                        "name": "neochat-shipping-mcp",
+                        "name": "neochat-mcp",
                         "version": "1.0.0",
                     },
                 },
@@ -48,7 +56,7 @@ class MCPServer:
             }
 
         if method == "tools/list":
-            tools = get_mcp_tool_definitions()
+            tools = _all_tool_definitions()
             return {
                 "jsonrpc": "2.0",
                 "result": {"tools": tools},
@@ -87,7 +95,7 @@ class MCPServer:
 
     async def list_tools(self) -> list[dict[str, Any]]:
         """Return all MCP tool definitions."""
-        return get_mcp_tool_definitions()
+        return _all_tool_definitions()
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool by name and return its result."""
