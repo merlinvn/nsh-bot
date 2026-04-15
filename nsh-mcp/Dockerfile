@@ -13,8 +13,8 @@ RUN uv pip install --system --no-cache .
 
 COPY data/ ./data/
 
-RUN cp -r /app/data /usr/local/lib/python3.11/site-packages/nsh_mcp/data
-
 EXPOSE 8080
+
+ENV NSH_MCP_DATA_DIR=/app/data
 
 CMD ["uvicorn", "nsh_mcp.server:app", "--host", "0.0.0.0", "--port", "8080"]

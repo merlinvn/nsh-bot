@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,9 +14,9 @@ if TYPE_CHECKING:
 
 _config_cache: dict[str, PricingConfig] = {}
 
-# Base directory for tenant config files
-# Located at nsh-mcp/data/ (next to nsh_mcp package)
-CONFIG_DIR = Path(__file__).parent.parent / "data"
+# Config dir from env, defaulting to nsh-mcp/data/ next to the installed package
+_CONFIG_DIR_DEFAULT = Path(__file__).resolve().parent.parent / "data"
+CONFIG_DIR: Path = Path(os.environ.get("NSH_MCP_DATA_DIR", _CONFIG_DIR_DEFAULT))
 DEFAULT_TENANT = "nsh"
 
 
