@@ -11,7 +11,9 @@ COPY pyproject.toml uv.lock* ./
 
 RUN uv pip install --system --no-cache .
 
-COPY src/nsh_mcp/pricing/tenants /usr/local/lib/python3.11/site-packages/nsh_mcp/pricing/tenants
+COPY data/ ./data/
+
+RUN cp -r /app/data /usr/local/lib/python3.11/site-packages/nsh_mcp/data
 
 EXPOSE 8080
 

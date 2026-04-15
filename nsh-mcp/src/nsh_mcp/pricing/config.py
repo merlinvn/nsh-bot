@@ -14,7 +14,8 @@ if TYPE_CHECKING:
 _config_cache: dict[str, PricingConfig] = {}
 
 # Base directory for tenant config files
-CONFIG_DIR = Path(__file__).parent / "tenants"
+# Located at nsh-mcp/data/ (next to nsh_mcp package)
+CONFIG_DIR = Path(__file__).parent.parent / "data"
 DEFAULT_TENANT = "nsh"
 
 
