@@ -33,6 +33,11 @@ TOOL_HANDLERS: dict[str, Any] = {
 }
 
 
+def _get_tool_definitions() -> list[dict[str, Any]]:
+    from nsh_mcp.tools import get_mcp_tool_definitions as shipping_tools
+    return shipping_tools() + customer.get_tool_definitions() + support.get_tool_definitions()
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "healthy"}
