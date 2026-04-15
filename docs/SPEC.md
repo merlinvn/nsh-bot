@@ -57,6 +57,8 @@ All external traffic goes through Caddy (ports 80/443):
 **Dev-only ports** (via `docker-compose.override.yml`):
 - `postgres:5432`, `redis:6379`, `api:8000`, `conversation-worker:8080`, `outbound-worker:8081`, `llm-worker:8082`, `frontend:3000`, `rabbitmq:5672`
 
+**Worker health:** Each worker exposes `/health` on its metrics port (8080/8081/8082). Docker healthcheck returns `200 healthy` when the RabbitMQ consumer is running, `503 unhealthy` when the consumer has crashed. Workers auto-restart via `restart: unless-stopped` + healthcheck failures.
+
 ---
 
 ## Message Queues
@@ -272,24 +274,27 @@ Shared LLM loop used by LLMWorker for all channels.
 
 - **Max steps:** 3
 - **Max tool calls per step:** 2
-- **Tool backend:** `MCPToolBackend` — implements `ToolBackend` protocol, routes to MCP engine
+- **Tool backend:** `MCPToolBackend` — routes all 6 tools across 3 MCP domains
 - **Tool call recording:** Persisted to `tool_calls` table via `on_tool_call` callback
 
-### Tools
+### MCP Tools (all 6 tools MCP-based)
 
-Available tools defined in `app/workers/conversation/registry.py`:
+| Domain | Tool | Handler |
+|--------|------|---------|
+| Shipping | `calculate_shipping_quote` | `mcp/engine.py` → pricing engine |
+| Shipping | `explain_quote_breakdown` | `mcp/engine.py` → pricing engine |
+| Customer | `lookup_customer` | `mcp/customer.py` |
+| Customer | `get_order_status` | `mcp/customer.py` |
+| Support | `create_support_ticket` | `mcp/support.py` |
+| Support | `handoff_request` | `mcp/support.py` |
 
-- `lookup_customer` — Find customer by phone/name
-- `get_order_status` — Query order status
-- `create_support_ticket` — Open support ticket
-- `handoff_request` — Flag for human handoff
-- `calculate_shipping_quote` — Calculate shipping quote (via MCP engine)
-- `explain_quote_breakdown` — Explain pricing in Vietnamese (via MCP engine)
+`MCPToolBackend` (`app/workers/mcp/backend.py`) is the single execution entry point.
+`MCPClient.list_tools()` (`app/workers/mcp/client.py`) aggregates all tool definitions.
 
-### Pricing Engine + MCP
+### Pricing Engine
 
 `app/workers/engine/pricing.py` — pure `QuoteInput → QuoteResult`, no I/O.
-`app/workers/mcp/backend.py` — `MCPToolBackend` with Redis cache-aside (900s TTL).
+`app/workers/mcp/cache.py` — Redis cache-aside, SHA256 key, 900s TTL, fail-open.
 
 ---
 
@@ -363,4 +368,4 @@ docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
 
 - **LLM Judge (Evaluation):** Each test case judged by second LLM call asking if actual answer semantically matches expected. Returns Vietnamese PASS/FAIL with reasoning.
 
-- **MCP Architecture:** `app/workers/engine/` — pure pricing logic. `app/workers/mcp/` — MCP server with `MCPToolBackend` (ToolBackend protocol impl). Tenant pricing in `config/tenants/{tenant_id}/pricing_rules.json`. Quote caching via Redis (900s TTL).
+- **MCP Architecture:** `app/workers/engine/` — pure pricing logic. `app/workers/mcp/` — per-domain MCP servers (shipping, customer, support). `MCPToolBackend` routes all 6 tools. `MCPClient` aggregates tool definitions. Tenant pricing in `config/tenants/{tenant_id}/pricing_rules.json`. Quote caching via Redis (900s TTL).

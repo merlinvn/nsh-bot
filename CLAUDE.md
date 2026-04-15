@@ -120,12 +120,15 @@ Pricing logic extracted into `app/workers/engine/`:
 
 MCP layer in `app/workers/mcp/`:
 - `server.py` — JSON-RPC 2.0 MCP protocol (in-process)
-- `tools.py` — MCP tool definitions
-- `engine.py` — MCP → engine binding
-- `backend.py` — `MCPToolBackend` implementing `ToolBackend` protocol
+- `backend.py` — `MCPToolBackend` routing all 6 tools across 3 domains
+- `tools.py` — shipping tools: `calculate_shipping_quote`, `explain_quote_breakdown`
+- `customer.py` — customer tools: `lookup_customer`, `get_order_status`
+- `support.py` — support tools: `create_support_ticket`, `handoff_request`
+- `engine.py` — MCP → pricing engine binding (shipping only)
+- `client.py` — `MCPClient` aggregating all tool definitions
 
-Two MCP tools: `calculate_shipping_quote`, `explain_quote_breakdown`.
-Agent calls MCP tools directly (no subagent loop).
+All 6 tools are MCP-based. `MCPToolBackend` is the single execution entry point.
+Tool definitions come from `MCPClient.list_tools()` (not embedded in payloads).
 
 ### Outbound
 - Send via `outbound.send` queue
