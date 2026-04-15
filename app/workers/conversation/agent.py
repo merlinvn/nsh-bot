@@ -15,7 +15,7 @@ from app.workers.conversation.types import LLMResponse, ToolCallResult
 
 if TYPE_CHECKING:
     from app.workers.conversation.llm import BaseLLM
-    from app.mcp.backend import MCPToolBackend
+    from app.workers.mcp_client import MCPToolBackend
 
 
 # ---------------------------------------------------------------------------

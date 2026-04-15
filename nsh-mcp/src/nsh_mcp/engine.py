@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 import redis.asyncio
 
-from app.mcp.pricing.pricing import QuoteInput, calculate_quote
-from app.mcp.pricing.config import load_pricing_config
-from app.mcp.pricing.cache import get_cached_quote, set_cached_quote
+from nsh_mcp.pricing.pricing import QuoteInput, calculate_quote
+from nsh_mcp.pricing.config import load_pricing_config
+from nsh_mcp.pricing.cache import get_cached_quote, set_cached_quote
 
 if TYPE_CHECKING:
     import redis.asyncio

@@ -15,19 +15,11 @@ from app.models.evaluation import EvaluationTestCase, PromptEvaluation
 from app.models.prompt import Prompt
 from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import create_llm_client
-from app.mcp.client import MCPClient
+from app.workers.mcp_client import MCPToolBackend, list_tools
 
 MAX_LLM_STEPS = 3
 MAX_TOOL_CALLS_PER_STEP = 2
 
-
-@dataclass
-class AgentConfig:
-    """Configuration for an agent (main or subagent)."""
-    name: str
-    system_prompt: str
-    tool_definitions: list[dict[str, Any]]
-    max_steps: int = MAX_LLM_STEPS
 from app.workers.shared.db import db_session
 from app.workers.shared.logging import get_logger
 from app.workers.shared.queue import get_channel
@@ -51,7 +43,7 @@ class LLMProcessor:
 
     def __init__(self) -> None:
         self._llm = None
-        self._mcp_client = MCPClient()
+        self._mcp_backend = MCPToolBackend()
 
     def _get_llm(self):
         if self._llm is None:
@@ -117,9 +109,9 @@ class LLMProcessor:
 
         runner = AgentRunner(
             llm=self._get_llm(),
-            tool_executor=self._mcp_client.backend,
+            tool_executor=self._mcp_backend,
             system_prompt=system_prompt,
-            tool_definitions=self._mcp_client.list_tools(),
+            tool_definitions=list_tools(),
             max_steps=MAX_LLM_STEPS,
             max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
         )
@@ -179,9 +171,9 @@ class LLMProcessor:
 
         runner = AgentRunner(
             llm=self._get_llm(),
-            tool_executor=self._mcp_client.backend,
+            tool_executor=self._mcp_backend,
             system_prompt=system_prompt,
-            tool_definitions=self._mcp_client.list_tools(),
+            tool_definitions=list_tools(),
             max_steps=MAX_LLM_STEPS,
             max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
         )
@@ -226,9 +218,9 @@ class LLMProcessor:
 
         runner = AgentRunner(
             llm=self._get_llm(),
-            tool_executor=self._mcp_client.backend,
+            tool_executor=self._mcp_backend,
             system_prompt=system_prompt,
-            tool_definitions=self._mcp_client.list_tools(),
+            tool_definitions=list_tools(),
             max_steps=MAX_LLM_STEPS,
             max_tool_calls_per_step=MAX_TOOL_CALLS_PER_STEP,
         )

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from app.workers.shared.logging import get_logger
+from nsh_mcp.logging import get_logger
 
 logger = get_logger("mcp.support")
 
