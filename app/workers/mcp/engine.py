@@ -22,10 +22,7 @@ async def mcp_calculate_shipping_quote(
     tool_input: dict[str, Any],
     tenant_id: str = DEFAULT_TENANT,
 ) -> dict[str, Any]:
-    """Execute calculate_shipping_quote via the pricing engine + cache.
-
-    This is the MCP tool handler for calculate_shipping_quote.
-    """
+    """Execute calculate_shipping_quote — only weight + dimensions, no extra fields."""
     config = load_pricing_config(tenant_id)
     input_data = QuoteInput(
         service_type=tool_input["service_type"],
@@ -33,20 +30,8 @@ async def mcp_calculate_shipping_quote(
         length_cm=tool_input["length_cm"],
         width_cm=tool_input["width_cm"],
         height_cm=tool_input["height_cm"],
-        product_category=tool_input.get("product_category", ""),
-        is_same_item_lot=tool_input.get("is_same_item_lot", False),
-        is_fragile=tool_input.get("is_fragile", False),
-        contains_battery=tool_input.get("contains_battery", False),
-        contains_liquid=tool_input.get("contains_liquid", False),
-        contains_powder=tool_input.get("contains_powder", False),
-        is_medical_item=tool_input.get("is_medical_item", False),
-        is_fake_or_branded_sensitive=tool_input.get("is_fake_or_branded_sensitive", False),
-        is_cosmetic=tool_input.get("is_cosmetic", False),
-        needs_insurance=tool_input.get("needs_insurance", False),
-        declared_goods_value_vnd=tool_input.get("declared_goods_value_vnd", 0),
     )
 
-    # Check cache first
     cached = await get_cached_quote(redis_client, tenant_id, input_data)
     if cached is not None:
         return {
@@ -58,10 +43,8 @@ async def mcp_calculate_shipping_quote(
             "_cached": True,
         }
 
-    # Compute fresh
     result = calculate_quote(tenant_id, input_data, config)
 
-    # Store in cache (only cache "quoted" status — rejections need fresh check)
     if result.status == "quoted":
         await set_cached_quote(
             redis_client,

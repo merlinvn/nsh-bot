@@ -26,13 +26,9 @@ from app.workers.mcp import customer, support
 app = FastAPI(title="nsh-mcp")
 
 TOOL_HANDLERS: dict[str, Any] = {
-    # Shipping tools (engine)
     "calculate_shipping_quote": shipping_engine.mcp_calculate_shipping_quote,
-    "explain_quote_breakdown": shipping_engine.mcp_explain_quote_breakdown,
-    # Customer tools
     "lookup_customer": customer.lookup_customer,
     "get_order_status": customer.get_order_status,
-    # Support tools
     "create_support_ticket": support.create_support_ticket,
     "handoff_request": support.handoff_request,
 }
@@ -118,7 +114,7 @@ async def handle_rpc(request: Request) -> JSONResponse:
 
         try:
             # Shipping tools need redis + tenant_id
-            if tool_name in ("calculate_shipping_quote", "explain_quote_breakdown"):
+            if tool_name == "calculate_shipping_quote":
                 tenant_id = params.get("tenant_id", "nsh")
                 redis_client = redis.from_url(
                     "redis://redis:6379",

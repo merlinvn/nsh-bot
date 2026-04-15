@@ -18,24 +18,13 @@ QUOTE_KEY_PREFIX = "quote"
 
 
 def build_cache_key(tenant_id: str, input_data: QuoteInput) -> str:
-    """Build a deterministic cache key from quote input fields that affect pricing."""
+    """Build a deterministic cache key from quote input."""
     fields = {
         "service_type": input_data.service_type,
         "actual_weight_kg": input_data.actual_weight_kg,
         "length_cm": input_data.length_cm,
         "width_cm": input_data.width_cm,
         "height_cm": input_data.height_cm,
-        "product_category": input_data.product_category,
-        "is_same_item_lot": input_data.is_same_item_lot,
-        "is_fragile": input_data.is_fragile,
-        "contains_battery": input_data.contains_battery,
-        "contains_liquid": input_data.contains_liquid,
-        "contains_powder": input_data.contains_powder,
-        "is_medical_item": input_data.is_medical_item,
-        "is_fake_or_branded_sensitive": input_data.is_fake_or_branded_sensitive,
-        "is_cosmetic": input_data.is_cosmetic,
-        "needs_insurance": input_data.needs_insurance,
-        "declared_goods_value_vnd": input_data.declared_goods_value_vnd,
     }
     normalized = json.dumps(fields, sort_keys=True, ensure_ascii=True)
     hash_hex = hashlib.sha256(normalized.encode()).hexdigest()[:16]

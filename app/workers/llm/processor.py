@@ -16,7 +16,6 @@ from app.models.prompt import Prompt
 from app.workers.conversation.agent import AgentRunner
 from app.workers.conversation.llm import create_llm_client
 from app.workers.mcp.client import MCPClient
-from app.workers.conversation.tools import ToolExecutor
 
 MAX_LLM_STEPS = 3
 MAX_TOOL_CALLS_PER_STEP = 2
@@ -53,7 +52,6 @@ class LLMProcessor:
     def __init__(self) -> None:
         self._llm = None
         self._mcp_client = MCPClient()
-        self._tool_executor = ToolExecutor(self._mcp_client.backend)
 
     def _get_llm(self):
         if self._llm is None:
@@ -117,11 +115,9 @@ class LLMProcessor:
         conversation_history = payload.get("conversation_history", [])
         inbound_text = payload.get("inbound_text", "")
 
-        tool_executor = ToolExecutor(self._mcp_client.backend)
-
         runner = AgentRunner(
             llm=self._get_llm(),
-            tool_executor=tool_executor,
+            tool_executor=self._mcp_client.backend,
             system_prompt=system_prompt,
             tool_definitions=self._mcp_client.list_tools(),
             max_steps=MAX_LLM_STEPS,
@@ -148,7 +144,7 @@ class LLMProcessor:
                     latency_ms=latency_ms,
                 )
                 db.add(record)
-                db.commit()
+                await db.commit()
 
         result = await runner.run(conversation_history, inbound_text, on_tool_call=on_tool_call)
 
@@ -181,11 +177,9 @@ class LLMProcessor:
 
         conversation_history = messages + [{"role": "user", "content": new_message}]
 
-        tool_executor = ToolExecutor(self._mcp_client.backend)
-
         runner = AgentRunner(
             llm=self._get_llm(),
-            tool_executor=tool_executor,
+            tool_executor=self._mcp_client.backend,
             system_prompt=system_prompt,
             tool_definitions=self._mcp_client.list_tools(),
             max_steps=MAX_LLM_STEPS,
@@ -230,11 +224,9 @@ class LLMProcessor:
                 prompt_record = result.scalar_one_or_none()
                 system_prompt = prompt_record.template if prompt_record else ""
 
-        tool_executor = ToolExecutor(self._mcp_client.backend)
-
         runner = AgentRunner(
             llm=self._get_llm(),
-            tool_executor=tool_executor,
+            tool_executor=self._mcp_client.backend,
             system_prompt=system_prompt,
             tool_definitions=self._mcp_client.list_tools(),
             max_steps=MAX_LLM_STEPS,

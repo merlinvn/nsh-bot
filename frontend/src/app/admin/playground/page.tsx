@@ -35,7 +35,7 @@ export default function PlaygroundPage() {
   useEffect(() => {
     if (promptDetail?.versions && promptDetail.versions.length > 0) {
       const activeVer = promptDetail.versions.find(
-        (v: { version: number }) => v.version === promptDetail.active_version
+        (v: { version: number }) => String(v.version) === String(promptDetail.active_version)
       );
       if (activeVer) {
         setSelectedVersion(String(activeVer.version));
@@ -58,7 +58,7 @@ export default function PlaygroundPage() {
     }
     if (!promptDetail?.versions || !selectedVersion) return;
     const ver = promptDetail.versions.find(
-      (v: { version: number }) => v.version === Number(selectedVersion)
+      (v: { version: number }) => String(v.version) === String(selectedVersion)
     );
     if (ver) {
       setSystemPrompt(ver.template || promptDetail.template || "");

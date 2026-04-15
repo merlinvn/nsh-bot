@@ -125,6 +125,13 @@ class MCPHTTPClient:
         raise RuntimeError(f"All MCP servers failed for {tool_name}: {errors}")
 
 
+class _ToolResult:
+    """Wrapper for tool execution result — provides .output attribute for AgentRunner."""
+
+    def __init__(self, output: dict[str, Any]) -> None:
+        self.output = output
+
+
 class MCPHTTPBackend:
     """Async tool backend that calls the remote MCP server(s) via HTTP."""
 
@@ -134,9 +141,10 @@ class MCPHTTPBackend:
     async def call(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
         return await self._http.call_tool(tool_name, tool_input)
 
-    async def execute(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
-        """Alias of call() for ToolExecutor interface compatibility."""
-        return await self.call(tool_name, tool_input)
+    async def execute(self, tool_name: str, tool_input: dict[str, Any]) -> _ToolResult:
+        """Execute tool and return wrapped result for AgentRunner compatibility."""
+        result = await self.call(tool_name, tool_input)
+        return _ToolResult(output=result)
 
     async def close(self) -> None:
         await self._http.close()

@@ -189,7 +189,7 @@ Nhiệm vụ của bạn là tư vấn cho khách hàng về các dịch vụ: V
 
 # QUY TẮC HOẠT ĐỘNG (STRICT RULES & GUARDRAILS)
 1. BẮT BUỘC HƯỚNG DẪN LIÊN HỆ ZALO: Mọi câu trả lời của bạn LUÔN LUÔN phải kết thúc bằng một câu điều hướng khách hàng liên hệ qua Zalo để được tư vấn chính xác, báo giá cụ thể hoặc giải quyết sự cố. (Ví dụ: "Để có báo giá chính xác nhất cho đơn hàng của mình, Quý khách vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ ngay lập tức nhé!").
-2. BÁO GIÁ VẬN CHUYỂN: Khi khách hàng yêu cầu báo giá ship, BẮT BUỘC dùng tool delegate_to_quote_agent. KHÔNG tự tính toán giá từ knowledge base. Nếu khách chưa cung cấp đủ thông tin (cân nặng, kích thước), subagent sẽ tự hỏi khách trong quá trình báo giá.
+2. BÁO GIÁ VẬN CHUYỂN: Khi khách hàng yêu cầu báo giá ship, BẮT BUỘC dùng tool calculate_shipping_quote. KHÔNG tự tính toán giá từ knowledge base. Nếu khách chưa cung cấp đủ thông tin (cân nặng, kích thước, gói dịch vụ), hỏi khách trước khi gọi tool.
 3. HÀNG CẤM: Bất cứ khi nào khách hàng nhắc đến hàng cấm (vũ khí, chất lỏng, hóa chất, pin rời, thực phẩm tươi sống...), bạn phải lập tức từ chối vận chuyển và cảnh báo rủi ro theo chính sách.
 4. KHÔNG SỬ DỤNG TRÍCH DẪN: Trả lời tự nhiên như một con người, tuyệt đối không chèn các ký tự trích dẫn nguồn tài liệu vào câu trả lời.
 
@@ -282,15 +282,19 @@ Khách hàng:
 
     def _get_default_tool_policy_prompt(self) -> str:
         return (
-            "Hướng dẫn sử dụng công cụ:\n"
-            "- lookup_customer: Tìm khách hàng bằng số điện thoại hoặc tên. Dùng khi khách cung cấp thông tin cá nhân.\n"
-            "- get_order_status: Tra cứu trạng thái đơn hàng. Dùng khi khách hỏi về đơn hàng.\n"
-            "- create_support_ticket: Tạo phiếu hỗ trợ cho vấn đề cần xử lý thủ công.\n"
-            "- handoff_request: Yêu cầu chuyển cuộc trò chuyện cho nhân viên người. Chỉ dùng khi khách yêu cầu rõ ràng.\n\n"
+            "Hướng dẫn sử dụng calculate_shipping_quote:\n"
+            "- calculate_shipping_quote: GỌI NGAY khi khách hỏi báo giá ship. "
+            "CHỈ cần truyền 5 tham số bắt buộc:\n"
+            "  * service_type: \"fast\" | \"standard\" | \"bundle\" | \"lot\"\n"
+            "  * actual_weight_kg: số kg\n"
+            "  * length_cm, width_cm, height_cm: kích thước cm\n"
+            "KHÔNG cần truyền gì thêm. Tool tự tính toán hết.\n\n"
             "Quy tắc:\n"
-            "- Chỉ gọi tối đa 2 công cụ mỗi lần phản hồi\n"
-            "- Tổng số bước gọi LLM không quá 3 lần\n"
-            "- Nếu công cụ trả lỗi, thông báo cho khách và đề xuất hướng khắc phục\n"
+            "- GỌI NGAY calculate_shipping_quote khi khách hỏi báo giá, với bất kỳ thông tin nào đã có.\n"
+            "- KHÔNG hỏi thêm trước khi gọi tool.\n"
+            "- Nếu tool trả status=need_clarification, đọc missing_fields và hỏi đúng trường còn thiếu.\n"
+            "- Nếu tool trả status=quoted, TRẢ LỜI KHÁCH ĐÚNG NỘI DUNG message_to_customer, KHÔNG THAY ĐỔI, KHÔNG THÊM, KHÔNG BỚT.\n"
+            "- KHÔNG viết lại, KHÔNG paraphrase, KHÔNG thêm emoji hay câu mở đầu.\n"
         )
 
     # ---------------------------------------------------------------------------
