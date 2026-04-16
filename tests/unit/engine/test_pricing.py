@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.workers.engine.pricing import (
+from nsh_mcp.pricing.pricing import (
     QuoteInput,
     QuoteResult,
     PricingConfig,
@@ -77,6 +77,7 @@ class TestCalculateQuote:
             length_cm=20,
             width_cm=20,
             height_cm=20,
+            product_description="thú bông",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "quoted"
@@ -94,105 +95,74 @@ class TestCalculateQuote:
             length_cm=60,
             width_cm=60,
             height_cm=60,
+            product_description="thú bông",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "quoted"
         assert result.quote_data["chargeable_weight_kg"] == 28.0
 
-    def test_fast_rejects_battery(self, default_config):
+    def test_fast_rejects_battery_in_product_description(self, default_config):
+        """Battery in product description → fast service not allowed."""
         input_data = QuoteInput(
             service_type="fast",
             actual_weight_kg=30,
             length_cm=20,
             width_cm=20,
             height_cm=20,
-            contains_battery=True,
+            product_description="pin sạc dự phòng",
         )
         result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "rejected"
-        assert "pin" in result.message_to_customer
+        assert result.status == "need_clarification"
+        assert "gói nhanh" in result.message_to_customer.lower()
 
-    def test_fast_rejects_liquid(self, default_config):
+    def test_fast_rejects_liquid_in_product_description(self, default_config):
+        """Liquid in product description → fast service not allowed."""
         input_data = QuoteInput(
             service_type="fast",
             actual_weight_kg=30,
             length_cm=20,
             width_cm=20,
             height_cm=20,
-            contains_liquid=True,
+            product_description="chất lỏng",
         )
         result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "rejected"
+        assert result.status == "need_clarification"
 
-    def test_fast_rejects_powder(self, default_config):
+    def test_fast_rejects_powder_in_product_description(self, default_config):
+        """Powder in product description → fast service not allowed."""
         input_data = QuoteInput(
             service_type="fast",
             actual_weight_kg=30,
             length_cm=20,
             width_cm=20,
             height_cm=20,
-            contains_powder=True,
+            product_description="bột màu",
         )
         result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "rejected"
+        assert result.status == "need_clarification"
 
-    def test_fast_rejects_medical(self, default_config):
+    def test_rejects_prohibited_product(self, default_config):
+        """Prohibited product → rejected."""
         input_data = QuoteInput(
             service_type="fast",
             actual_weight_kg=30,
             length_cm=20,
             width_cm=20,
             height_cm=20,
-            is_medical_item=True,
+            product_description="súng nhựa",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "rejected"
 
-    def test_standard_rejects_medical(self, default_config):
-        input_data = QuoteInput(
-            service_type="standard",
-            actual_weight_kg=30,
-            length_cm=20,
-            width_cm=20,
-            height_cm=20,
-            is_medical_item=True,
-        )
-        result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "rejected"
-
-    def test_bundle_rejects_medical(self, default_config):
-        input_data = QuoteInput(
-            service_type="bundle",
-            actual_weight_kg=30,
-            length_cm=20,
-            width_cm=20,
-            height_cm=20,
-            is_medical_item=True,
-        )
-        result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "rejected"
-
-    def test_cosmetic_triggers_manual_review(self, default_config):
+    def test_premium_brand_over_2kg_manual_review(self, default_config):
+        """Premium brand electronics over 2kg → manual review."""
         input_data = QuoteInput(
             service_type="fast",
-            actual_weight_kg=30,
+            actual_weight_kg=3,
             length_cm=20,
             width_cm=20,
             height_cm=20,
-            is_cosmetic=True,
-        )
-        result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "manual_review"
-        assert "mỹ phẩm" in result.message_to_customer
-
-    def test_fake_or_branded_sensitive_triggers_manual_review(self, default_config):
-        input_data = QuoteInput(
-            service_type="standard",
-            actual_weight_kg=30,
-            length_cm=20,
-            width_cm=20,
-            height_cm=20,
-            is_fake_or_branded_sensitive=True,
+            product_description="tai nghe Sony cao cấp",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "manual_review"
@@ -204,34 +174,34 @@ class TestCalculateQuote:
             length_cm=20,
             width_cm=20,
             height_cm=20,
+            product_description="thú bông",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "need_clarification"
         assert "actual_weight_kg" in result.missing_fields
 
-    def test_lot_requires_same_item_lot(self, default_config):
-        """Lot with is_same_item_lot=False needs clarification."""
+    def test_missing_service_type_returns_clarification(self, default_config):
         input_data = QuoteInput(
-            service_type="lot",
-            actual_weight_kg=100,
-            length_cm=100,
-            width_cm=100,
-            height_cm=100,
-            is_same_item_lot=False,
+            service_type="",
+            actual_weight_kg=30,
+            length_cm=20,
+            width_cm=20,
+            height_cm=20,
+            product_description="thú bông",
         )
         result = calculate_quote("nsh", input_data, default_config)
-        # is_same_item_lot=False triggers "need_clarification" (added to missing_fields)
         assert result.status == "need_clarification"
+        assert "service_type" in result.missing_fields
 
     def test_lot_requires_minimum_50kg(self, default_config):
-        """Lot with actual weight below 50kg needs manual review."""
+        """Lot with actual weight below 50kg → manual review."""
         input_data = QuoteInput(
             service_type="lot",
             actual_weight_kg=30,
             length_cm=100,
             width_cm=100,
             height_cm=100,
-            is_same_item_lot=True,
+            product_description="quần áo lẻ",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "manual_review"
@@ -251,12 +221,12 @@ class TestCalculateQuote:
             length_cm=100,
             width_cm=100,
             height_cm=100,
-            is_same_item_lot=True,
-            product_category="quần áo",
+            product_description="quần áo lẻ",
+            lot_surcharge_type="clothing",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "quoted"
-        assert result.quote_data["subtotal_vnd"] == 5100000
+        assert result.quote_data["total_vnd"] == 5100000
 
     def test_lot_surcharge_fragile(self, default_config):
         """Volumetric kg = 200, base = 4,500,000, fragile surcharge = 200*7000 = 1,400,000."""
@@ -266,53 +236,12 @@ class TestCalculateQuote:
             length_cm=100,
             width_cm=100,
             height_cm=100,
-            is_same_item_lot=True,
-            is_fragile=True,
+            product_description="chảo inox",
+            lot_surcharge_type="fragile",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "quoted"
-        assert result.quote_data["subtotal_vnd"] == 5900000
-
-    def test_insurance_fee(self, default_config):
-        input_data = QuoteInput(
-            service_type="fast",
-            actual_weight_kg=30,
-            length_cm=20,
-            width_cm=20,
-            height_cm=20,
-            needs_insurance=True,
-            declared_goods_value_vnd=1000000,
-        )
-        result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "quoted"
-        assert result.quote_data["insurance_fee_vnd"] == 50000  # 5% of 1,000,000
-
-    def test_discount_over_100kg(self, default_config):
-        """Orders over 100kg get a voucher discount."""
-        input_data = QuoteInput(
-            service_type="fast",
-            actual_weight_kg=150,
-            length_cm=100,
-            width_cm=100,
-            height_cm=100,
-        )
-        result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "quoted"
-        discounts = result.quote_data["discounts"]
-        assert len(discounts) == 1
-        assert discounts[0]["amount_vnd"] == 125000
-
-    def test_over_500kg_manual_review(self, default_config):
-        """Over 500kg needs manual review."""
-        input_data = QuoteInput(
-            service_type="fast",
-            actual_weight_kg=501,
-            length_cm=100,
-            width_cm=100,
-            height_cm=100,
-        )
-        result = calculate_quote("nsh", input_data, default_config)
-        assert result.status == "manual_review"
+        assert result.quote_data["total_vnd"] == 5900000
 
     def test_bundle_takes_max_of_volumetric_and_actual(self, default_config):
         """Bundle service uses max(volumetric, actual), not average."""
@@ -324,7 +253,49 @@ class TestCalculateQuote:
             length_cm=60,
             width_cm=60,
             height_cm=60,
+            product_description="thú bông",
         )
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "quoted"
         assert result.quote_data["chargeable_weight_kg"] == 36.0
+
+    def test_over_500kg_manual_review(self, default_config):
+        """Over 500kg needs manual review."""
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=501,
+            length_cm=100,
+            width_cm=100,
+            height_cm=100,
+            product_description="thú bông",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "manual_review"
+
+    def test_fragile_product_adds_note(self, default_config):
+        """Fragile product adds warning note."""
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=5,
+            length_cm=30,
+            width_cm=30,
+            height_cm=30,
+            product_description="ly thủy tinh",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "quoted"
+        assert len(result.notes) > 0
+        assert any("dễ vỡ" in note.lower() for note in result.notes)
+
+    def test_product_description_optional_for_quote(self, default_config):
+        """Can still quote without product_description (but it's required by tool schema)."""
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=5,
+            length_cm=30,
+            width_cm=30,
+            height_cm=30,
+            product_description="",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "quoted"

@@ -135,7 +135,7 @@ async def test_fallback_prompt_if_db_unavailable():
         # Should fall back to default system prompt (in Vietnamese)
         assert "CSKH" in manager._cache._system_prompt
         assert manager._cache._tool_policy_prompt is not None
-        assert "lookup_customer" in manager._cache._tool_policy_prompt
+        assert "calculate_shipping_quote" in manager._cache._tool_policy_prompt
 
 
 def test_prompt_cache_is_expired():
@@ -152,17 +152,18 @@ def test_prompt_cache_not_expired():
     assert cache._is_expired() is False
 
 
-def test_prompt_manager_get_active_version_unknown():
+@pytest.mark.asyncio
+async def test_prompt_manager_get_active_version_unknown():
     """Test get_active_version returns 'unknown' when no cache."""
     manager = PromptManager()
-    assert manager.get_active_version() == "unknown"
+    assert await manager.get_active_version() == "unknown"
 
 
 @pytest.mark.asyncio
 async def test_prompt_manager_fallback_returns_vietnamese_text():
     """Test fallback prompt is Vietnamese text."""
     manager = PromptManager()
-    fallback = manager.get_fallback_prompt()
+    fallback = await manager.get_fallback_prompt()
     assert "Xin lỗi" in fallback
     assert "hệ thống" in fallback
     # Clean up background refresh tasks created during the test

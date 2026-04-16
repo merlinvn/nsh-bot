@@ -6,8 +6,8 @@ from typing import Any
 
 
 CALCULATE_SHIPPING_QUOTE_DESCRIPTION = (
-    "Gọi ngay khi khách hỏi báo giá ship. "
-    "Chỉ cần: service_type, actual_weight_kg, length_cm, width_cm, height_cm, product_description. "
+    "Tính cước vận chuyển dựa trên cân nặng, kích thước, và loại dịch vụ. "
+    "Tham số bắt buộc: service_type, actual_weight_kg, length_cm, width_cm, height_cm, product_description. "
     'service_type: fast="hàng nhanh"(3-6 ngày), standard="hàng thường"(5-9 ngày), bundle="hàng bộ"(10-15 ngày), lot="hàng lô"(15-25 ngày, tối thiểu 50kg). '
     "Khi tool trả status=quoted: sử dụng nội dung message_to_customer để trả lời chi tiết từng công thức tính cho khách. Thông báo khách là đây là ước tính, chi tiết cụ thể cho từng loại hàng thì liên hệ Zalo. "
     "LƯU Ý — CẤM kí gửi: vũ khí hình dạng (súng, dao, bất kể chất liệu), bột màu trắng, hóa chất không rõ nguồn gốc, hóa chất dễ cháy nổ (bình gas...), gỗ quý, chất kích thích, động thực vật tươi sống. "
@@ -54,7 +54,7 @@ def get_mcp_tool_definitions() -> list[dict[str, Any]]:
                     },
                     "product_description": {
                         "type": "string",
-                        "description": "Mô tả sản phẩm (vd: 'tai nghe Sony', 'thuốc', 'thú bông', 'vali rỗng'). Dùng để kiểm tra hàng cấm, hàng giới hạn (hiệu/điện tử cao cấp), hàng dễ vỡ, và gợi ý đóng gỗ/túi khí khi cần.",
+                        "description": "Mô tả sản phẩm (vd: 'tai nghe Sony', 'thuốc', 'thú bông', 'vali rỗng'). BẮT BUỘC. Dùng kiểm tra hàng cấm, hàng giới hạn (hiệu/điện tử cao cấp), hàng dễ vỡ, và gợi ý đóng gỗ/túi khí khi cần.",
                     },
                     "lot_surcharge_type": {
                         "type": "string",
@@ -68,6 +68,7 @@ def get_mcp_tool_definitions() -> list[dict[str, Any]]:
                     "length_cm",
                     "width_cm",
                     "height_cm",
+                    "product_description",
                 ],
             },
         },

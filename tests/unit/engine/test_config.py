@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.workers.engine.config import _json_to_config, clear_cache
+from nsh_mcp.pricing.config import _json_to_config, clear_cache
 
 
 class TestJsonToConfig:
@@ -70,26 +70,43 @@ class TestJsonToConfig:
 
 
 class TestLoadPricingConfig:
-    def test_loads_nsh_config(self):
+    def test_loads_nsh_config(self, monkeypatch, tmp_path):
+        """Patch CONFIG_DIR to use tmp_path data dir."""
+        data_dir = tmp_path / "nsh"
+        data_dir.mkdir()
+        (data_dir / "pricing_rules.json").write_text(
+            '{"tenant_id":"nsh","tiers":{"fast":[[50,68500],[150,67500]]},'
+            '"volumetric_divisor":{"fast":6000},"eta":{"fast":"3-6 ngày"},'
+            '"surcharges":{},"insurance_rate":0.05,"discounts":{}}'
+        )
+        import nsh_mcp.pricing.config as config_module
+        monkeypatch.setattr(config_module, "CONFIG_DIR", tmp_path)
         clear_cache()
-        from app.workers.engine.config import load_pricing_config
-        config = load_pricing_config("nsh")
+        config = config_module.load_pricing_config("nsh")
         assert config.tenant_id == "nsh"
         assert "fast" in config.tiers
         assert config.tiers["fast"][0] == (50.0, 68500)
-        clear_cache()  # cleanup
-
-    def test_caches_after_first_load(self):
         clear_cache()
-        from app.workers.engine.config import load_pricing_config, _config_cache
-        config1 = load_pricing_config("nsh")
-        config2 = load_pricing_config("nsh")
+
+    def test_caches_after_first_load(self, monkeypatch, tmp_path):
+        data_dir = tmp_path / "nsh"
+        data_dir.mkdir()
+        (data_dir / "pricing_rules.json").write_text(
+            '{"tenant_id":"nsh","tiers":{"fast":[[50,68500]]},'
+            '"volumetric_divisor":{"fast":6000},"eta":{},'
+            '"surcharges":{},"insurance_rate":0.05,"discounts":{}}'
+        )
+        import nsh_mcp.pricing.config as config_module
+        monkeypatch.setattr(config_module, "CONFIG_DIR", tmp_path)
+        clear_cache()
+        config1 = config_module.load_pricing_config("nsh")
+        config2 = config_module.load_pricing_config("nsh")
         assert config1 is config2
         clear_cache()
 
     def test_unknown_tenant_raises(self):
         clear_cache()
-        from app.workers.engine.config import load_pricing_config
+        from nsh_mcp.pricing.config import load_pricing_config
         with pytest.raises(FileNotFoundError):
             load_pricing_config("unknown_tenant")
         clear_cache()

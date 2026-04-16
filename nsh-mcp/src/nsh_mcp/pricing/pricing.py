@@ -30,8 +30,8 @@ class QuoteInput:
     length_cm: float
     width_cm: float
     height_cm: float
+    product_description: str
     lot_surcharge_type: Literal["clothing", "fragile", None] = None
-    product_description: str | None = None
 
 
 @dataclass

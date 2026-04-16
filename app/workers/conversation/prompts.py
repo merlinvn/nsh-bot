@@ -283,56 +283,19 @@ Khách hàng:
     def _get_default_tool_policy_prompt(self) -> str:
         return (
             "Hướng dẫn sử dụng calculate_shipping_quote:\n"
-            "- calculate_shipping_quote: GỌI NGAY khi khách hỏi báo giá ship. "
-            "CHỈ cần truyền 5 tham số bắt buộc:\n"
-            "  * service_type: \"fast\" | \"standard\" | \"bundle\" | \"lot\"\n"
-            "  * actual_weight_kg: số kg\n"
-            "  * length_cm, width_cm, height_cm: kích thước cm\n"
-            "KHÔNG cần truyền gì thêm. Tool tự tính toán hết.\n\n"
-            "Quy tắc:\n"
-            "- GỌI NGAY calculate_shipping_quote khi khách hỏi báo giá, với bất kỳ thông tin nào đã có.\n"
-            "- KHÔNG hỏi thêm trước khi gọi tool.\n"
+            "Quy tắc sử dụng:\n"
+            "- Mỗi yêu cầu báo giá = MỘT lần báo giá ĐỘC LẬP. Không dùng thông tin từ bất kỳ yêu cầu báo giá TRƯỚC ĐÓ nào (sản phẩm khác, khách hàng khác, phiên trước).\n"
+            "- Thu thập ĐỦ thông tin TRƯỚC KHI gọi tool. Hỏi khách từng trường còn thiếu bằng 1 câu ngắn gọn.\n"
+            "- Khi đã đủ thông tin, GỌI MỘT LẦN calculate_shipping_quote với đầy đủ dữ liệu.\n"
             "- Nếu tool trả status=need_clarification, đọc missing_fields và hỏi đúng trường còn thiếu.\n"
             "- Nếu tool trả status=quoted, TRẢ LỜI KHÁCH ĐÚNG NỘI DUNG message_to_customer, KHÔNG THAY ĐỔI, KHÔNG THÊM, KHÔNG BỚT.\n"
             "- KHÔNG viết lại, KHÔNG paraphrase, KHÔNG thêm emoji hay câu mở đầu.\n"
+            "\n"
+            "Thông tin cần thu thập cho calculate_shipping_quote:\n"
+            "  * service_type: \"fast\" (Nhanh 3-6 ngày) | \"standard\" (Thường 5-9 ngày) | \"bundle\" (Bộ 10-15 ngày) | \"lot\" (Lô 15-25 ngày, tối thiểu 50kg)\n"
+            "  * actual_weight_kg: cân nặng thực tế (kg)\n"
+            "  * length_cm, width_cm, height_cm: kích thước (cm)\n"
+            "  * product_description: mô tả sản phẩm (BẮT BUỘC) — để kiểm tra hàng cấm, hàng giới hạn, hàng dễ vỡ\n"
+            "  * lot_surcharge_type: \"clothing\" (+3.000đ/kg) | \"fragile\" (+7.000đ/kg) — chỉ khi service_type=\"lot\"\n"
         )
 
-    # ---------------------------------------------------------------------------
-    # Quote subagent prompt
-    # ---------------------------------------------------------------------------
-
-    def get_quote_system_prompt(self) -> str:
-        """Get the system prompt for the quote subagent."""
-        return """
-Bạn là subagent báo giá vận chuyển cho công ty "Nhận Ship Hàng" (NSH).
-
-Nhiệm vụ:
-1. Nếu khách hỏi báo giá vận chuyển, bạn cần thu thập đủ 3 thông tin: cân nặng (kg), kích thước (Dài x Rộng x Cao cm), và gói dịch vụ (Nhanh / Thường / Bộ / Bộ Lô).
-2. Khi thiếu thông tin, hỏi KHÁCH HÀNG TRỰC TIẾP bằng một câu hỏi ngắn gọn (không gọi tool).
-3. Khi đã đủ thông tin, gọi tool calculate_shipping_quote MỘT LẦN với đầy đủ dữ liệu.
-4. Khi tool trả về status="need_clarification", ĐỌC KỸ missing_fields và HỎI KHÁCH về các trường còn thiếu (1 câu mỗi lần).
-5. Khi tool trả về status="quoted", CHUYỂN KẾT QUẢ THÀNH CÂU TRẢ LỜI TỰ NHIÊN CHO KHÁCH.
-6. Khi tool trả về status="rejected" hoặc "manual_review", THÔNG BÁO CHO KHÁCH bằng lời lẽ ngắn gọn.
-
-QUAN TRỌNG: Bạn KHÔNG ĐƯỢC gọi calculate_shipping_quote liên tục với cùng dữ liệu thiếu. Nếu thiếu thông tin, phải HỎI KHÁCH trước.
-
-Các gói dịch vụ:
-- Nhanh (fast): 3-6 ngày, không nhận pin/chất lỏng/bột/y tế
-- Thường (standard): 5-10 ngày, không nhận y tế
-- Bộ (bundle): 10-15 ngày, không nhận y tế
-- Lô (lot): 15-25 ngày, cần cùng loại hàng và tối thiểu 50kg
-
-Khi kết thúc, PHẢI trả JSON hợp lệ theo một trong các status:
-- need_clarification: khi cần hỏi thêm thông tin từ khách
-- quoted: khi đã tính được giá
-- manual_review: khi cần kiểm tra tay
-- rejected: khi hàng bị từ chối
-
-Trả JSON như ví dụ sau (chỉ JSON, không text khác):
-
-{"status": "need_clarification", "message_to_customer": "Anh/chị cho em xin kích thước Dài x Rộng x Cao của kiện hàng (tính theo cm) nhé.", "missing_fields": ["length_cm", "width_cm", "height_cm"]}
-
-{"status": "quoted", "message_to_customer": "Em báo giá tạm tính 310.000đ - 330.000đ cho gói Nhanh 5kg, thời gian 3-6 ngày.", "quote_data": {"service_type": "fast", "chargeable_weight_kg": 5, "unit_price_vnd_per_kg": 64000, "subtotal_vnd": 320000, "insurance_fee_vnd": 0, "total_vnd": 320000, "eta": "3-6 ngày", "surcharges": [], "discounts": []}}
-
-{"status": "rejected", "message_to_customer": "Rất tiếc gói Nhanh không nhận pin. Anh/chị vui lòng chọn gói khác nhé.", "reason": "Gói nhanh không nhận pin/chất lỏng/bột/y tế."}
-"""

@@ -2,17 +2,17 @@
 
 import pytest
 
-from app.workers.mcp.customer import (
+from nsh_mcp.customer import (
     get_tool_definitions as customer_tool_defs,
     lookup_customer,
     get_order_status,
 )
-from app.workers.mcp.support import (
+from nsh_mcp.support import (
     get_tool_definitions as support_tool_defs,
     create_support_ticket,
     handoff_request,
 )
-from app.workers.mcp.tools import get_mcp_tool_definitions as shipping_tool_defs
+from nsh_mcp.tools import get_mcp_tool_definitions as shipping_tool_defs
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ def test_support_tool_definitions():
 def test_shipping_tool_definitions():
     defs = shipping_tool_defs()
     names = {d["name"] for d in defs}
-    assert names == {"calculate_shipping_quote", "explain_quote_breakdown"}
+    assert names == {"calculate_shipping_quote"}
 
 
 def test_all_tool_definitions_have_required_fields():
