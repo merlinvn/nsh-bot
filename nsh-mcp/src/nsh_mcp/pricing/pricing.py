@@ -89,14 +89,42 @@ def calculate_quote(
     # Reject prohibited products
     if input_data.product_description:
         desc_lower = input_data.product_description.lower()
-        prohibited = ["vũ khí", "súng", "dao", "hóa chất", "chất dễ cháy", "bình gas",
-                      "chất kích thích", "động vật sống", "thực vật sống"]
+        prohibited = [
+            "vũ khí", "súng", "dao", "bột màu trắng", "bột trắng",
+            "hóa chất", "chất dễ cháy", "bình gas", "gỗ quý",
+            "chất kích thích", "động vật sống", "thực vật sống",
+        ]
         for item in prohibited:
             if item in desc_lower:
                 return QuoteResult(
                     status="rejected",
                     message_to_customer="Rất tiếc, hàng này không được phép vận chuyển theo quy định. Vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ thêm.",
                     reason=f"Hàng cấm: {item}",
+                )
+
+    # Restrict premium brand electronics / high-end items
+    if input_data.product_description:
+        desc_lower = input_data.product_description.lower()
+        premium_keywords = ["tai nghe", "camera", "điện tử cao cấp", "hàng hiệu", "vali"]
+        is_premium = any(kw in desc_lower for kw in premium_keywords)
+        if is_premium:
+            if input_data.actual_weight_kg > 2:
+                return QuoteResult(
+                    status="manual_review",
+                    message_to_customer="Hàng hiệu / điện tử cao cấp chỉ nhận kí gửi tối đa 2kg. Vượt quá giới hạn — liên hệ Zalo 098.2128.029.",
+                    reason="Hàng hiệu vượt 2kg",
+                )
+
+    # Battery/magnet/liquid/powder/gel → fast service not allowed
+    if input_data.service_type == "fast" and input_data.product_description:
+        desc_lower = input_data.product_description.lower()
+        restricted_fast = ["pin", "nam châm", "chất lỏng", "bột", "gel"]
+        for item in restricted_fast:
+            if item in desc_lower:
+                return QuoteResult(
+                    status="need_clarification",
+                    message_to_customer="Hàng chứa Pin / Nam châm / Chất lỏng / Bột / Gel không đi được gói nhanh. Anh/chị vui lòng chọn: standard, bundle, hoặc lot.",
+                    missing_fields=[],
                 )
 
     volume = input_data.length_cm * input_data.width_cm * input_data.height_cm

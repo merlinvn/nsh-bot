@@ -268,6 +268,97 @@ class TestCalculateQuote:
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "quoted"
 
+    def test_premium_brand_electronics_over_2kg_manual_review(self, default_config):
+        """Premium electronics > 2kg need manual review."""
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=3,
+            length_cm=30,
+            width_cm=20,
+            height_cm=10,
+            product_description="tai nghe Sony cao cấp",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "manual_review"
+        assert "2kg" in result.message_to_customer
+
+    def test_premium_brand_under_2kg_quoted(self, default_config):
+        """Premium electronics <= 2kg can be quoted."""
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=2,
+            length_cm=30,
+            width_cm=20,
+            height_cm=10,
+            product_description="tai nghe Sony",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "quoted"
+
+    def test_fast_service_with_battery_needs_clarification(self, default_config):
+        """Battery items can't go fast — must switch service type."""
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=5,
+            length_cm=20,
+            width_cm=15,
+            height_cm=10,
+            product_description="pin sạc dự phòng",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "need_clarification"
+        assert "gói nhanh" in result.message_to_customer
+
+    def test_fast_service_with_magnet_needs_clarification(self, default_config):
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=2,
+            length_cm=15,
+            width_cm=15,
+            height_cm=5,
+            product_description="nam châm",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "need_clarification"
+
+    def test_fast_service_with_liquid_needs_clarification(self, default_config):
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=3,
+            length_cm=20,
+            width_cm=20,
+            height_cm=15,
+            product_description="chất lỏng",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "need_clarification"
+
+    def test_battery_item_can_use_standard_service(self, default_config):
+        """Battery items work fine with standard service."""
+        input_data = QuoteInput(
+            service_type="standard",
+            actual_weight_kg=5,
+            length_cm=20,
+            width_cm=15,
+            height_cm=10,
+            product_description="pin sạc dự phòng",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "quoted"
+
+    def test_prohibited_powder_white_rejected(self, default_config):
+        """White powder is on the prohibited list."""
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=1,
+            length_cm=10,
+            width_cm=10,
+            height_cm=5,
+            product_description="bột màu trắng",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "rejected"
+
     def test_standard_tier_250kg_correct_price(self, default_config):
         """Standard tier at 250kg bracket uses 50,500 not 40,500."""
         # 50kg fits in first bracket (50kg tier = 52500)
