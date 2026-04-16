@@ -8,7 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Install deps first — cached, only invalidates when pyproject.toml/uv.lock change
 COPY pyproject.toml uv.lock* ./
-RUN uv pip install --system --no-cache .
+RUN uv pip install --system --no-cache fastapi uvicorn[standard] pydantic httpx structlog
 
 # Copy source — code changes don't invalidate the deps layer above
 COPY src/ ./src/
@@ -17,5 +17,6 @@ COPY data/ ./data/
 EXPOSE 8080
 
 ENV NSH_MCP_DATA_DIR=/app/data
+ENV PYTHONPATH=/app/src
 
 CMD ["uvicorn", "nsh_mcp.server:app", "--host", "0.0.0.0", "--port", "8080"]

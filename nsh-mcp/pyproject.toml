@@ -11,5 +11,8 @@ dependencies = [
     "structlog>=24.4.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [tool.setuptools.packages.find]
 where = ["src"]

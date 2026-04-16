@@ -30,6 +30,8 @@ class QuoteInput:
     length_cm: float
     width_cm: float
     height_cm: float
+    lot_surcharge_type: Literal["clothing", "fragile", None] = None
+    product_description: str | None = None
 
 
 @dataclass
@@ -84,6 +86,19 @@ def calculate_quote(
             missing_fields=missing_fields,
         )
 
+    # Reject prohibited products
+    if input_data.product_description:
+        desc_lower = input_data.product_description.lower()
+        prohibited = ["vũ khí", "súng", "dao", "hóa chất", "chất dễ cháy", "bình gas",
+                      "chất kích thích", "động vật sống", "thực vật sống"]
+        for item in prohibited:
+            if item in desc_lower:
+                return QuoteResult(
+                    status="rejected",
+                    message_to_customer="Rất tiếc, hàng này không được phép vận chuyển theo quy định. Vui lòng liên hệ Zalo 098.2128.029 để được hỗ trợ thêm.",
+                    reason=f"Hàng cấm: {item}",
+                )
+
     volume = input_data.length_cm * input_data.width_cm * input_data.height_cm
 
     if input_data.service_type in ("fast", "standard"):
@@ -128,11 +143,24 @@ def calculate_quote(
 
     total_vnd = int(chargeable_kg * unit_price)
 
-    # Find which tier bracket this falls into
+    # Lot surcharges
+    surcharge_label: str | None = None
+    if input_data.service_type == "lot" and input_data.lot_surcharge_type:
+        surcharge_key = f"lot_{input_data.lot_surcharge_type}_per_kg"
+        surcharge_per_kg = config.surcharges.get(surcharge_key, 0)
+        surcharge_total = int(chargeable_kg * surcharge_per_kg)
+        total_vnd += surcharge_total
+        surcharge_label = (
+            "quần áo (+3.000đ/kg)"
+            if input_data.lot_surcharge_type == "clothing"
+            else "hàng khó (+7.000đ/kg)"
+        )
+
+    # Bracket label for pricing table display
     tiers = config.tiers.get(input_data.service_type, [])
     bracket_label = ""
     for max_kg, price in tiers:
-        if abs(price - unit_price) < 1:  # match by price
+        if abs(price - unit_price) < 1:
             for mk, mp in tiers:
                 if mp == price and chargeable_kg <= mk:
                     bracket_label = f"1-{mk}kg: {price:,}đ/kg"
@@ -205,12 +233,16 @@ def calculate_quote(
             f"",
             f"**4. Báo giá:**",
             f"   Đơn giá: {unit_price:,}đ/kg (bậc {bracket_label})",
-            f"   Cước = {chargeable_kg} × {unit_price:,} = **{total_vnd:,}đ**",
+            f"   Cước = {chargeable_kg} × {unit_price:,} = {total_vnd:,}đ",
             f"",
-            f"💵 **TỔNG CỘNG: {total_vnd:,}đ**",
-            f"⏱️ ETA: {config.eta.get(input_data.service_type, 'N/A')}",
         ]
     )
+
+    if surcharge_label:
+        lines.append(f"   Phụ phí ({surcharge_label}): +{surcharge_total:,}đ")
+
+    lines.append(f"💵 **TỔNG CỘNG: {total_vnd:,}đ**")
+    lines.append(f"⏱️ ETA: {config.eta.get(input_data.service_type, 'N/A')}")
 
     return QuoteResult(
         status="quoted",
@@ -224,6 +256,8 @@ def calculate_quote(
             "chargeable_weight_kg": chargeable_kg,
             "unit_price_vnd_per_kg": unit_price,
             "total_vnd": total_vnd,
+            "lot_surcharge_type": input_data.lot_surcharge_type,
+            "lot_surcharge_total": surcharge_total if surcharge_label else None,
             "eta": config.eta.get(input_data.service_type, "N/A"),
         },
     )
