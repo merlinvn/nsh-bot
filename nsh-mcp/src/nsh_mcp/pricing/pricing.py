@@ -43,6 +43,7 @@ class QuoteResult:
     missing_fields: list[str] = field(default_factory=list)
     reason: str = ""
     quote_data: dict = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
 
 
 def round_up_half(x: float) -> float:
@@ -194,6 +195,23 @@ def calculate_quote(
                     bracket_label = f"1-{mk}kg: {price:,}đ/kg"
                     break
 
+    # Collect fragility notes based on product description
+    notes: list[str] = []
+    if input_data.product_description:
+        desc_lower = input_data.product_description.lower()
+        if any(kw in desc_lower for kw in ["thủy tinh", "gốm", "men sứ", "ly", "chén", "bóng đèn", "lavabo", "bồn tắm", "kệ gỗ", "tủ gỗ"]):
+            notes.append("⚠️ Hàng dễ vỡ — nên đóng gỗ hoặc túi khí. Nhanshiphang không chịu trách nhiệm nếu không đóng gói.")
+        elif any(kw in desc_lower for kw in ["inox", "nhôm rỗng", "nhựa giòn", "chảo", "nồi", "bình đun", "bình thủy", "hộp nhựa"]):
+            notes.append("⚠️ Hàng dễ móp — nên đóng gỗ hoặc túi khí.")
+        if any(kw in desc_lower for kw in ["camera", "đồng hồ", "linh kiện", "tivi", "tủ lạnh"]):
+            notes.append("⚠️ Hàng giá trị cao dễ móc — nên đóng gỗ, tự chịu trách nhiệm nếu mất/hỏng.")
+        if any(kw in desc_lower for kw in ["hàng fake", "quần áo fake", "giày dép fake", "túi xách fake", "đồ chơi mô hình"]):
+            notes.append("⚠️ Hàng dễ rạch thủng — cân nhắc gói bảo vệ bổ sung.")
+        if any(kw in desc_lower for kw in ["mực in", "hương liệu", "bột có màu", "gia vị"]):
+            notes.append("⚠️ Hàng dễ bung/thấm/lây lan — không đóng chung với hàng khác, cần đóng túi kín.")
+        if notes:
+            notes.append("💡 Nhanshiphang khuyến khích Quý khách cân nhắc kỹ phí đóng gỗ/túi khí để tránh tổn thất trong vận chuyển.")
+
     service_labels = {
         "fast": "Gói Nhanh (Hàng Bay)",
         "standard": "Gói Thường",
@@ -288,4 +306,5 @@ def calculate_quote(
             "lot_surcharge_total": surcharge_total if surcharge_label else None,
             "eta": config.eta.get(input_data.service_type, "N/A"),
         },
+        notes=notes,
     )

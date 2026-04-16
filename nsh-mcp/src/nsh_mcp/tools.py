@@ -13,8 +13,13 @@ CALCULATE_SHIPPING_QUOTE_DESCRIPTION = (
     "LƯU Ý — CẤM kí gửi: vũ khí hình dạng (súng, dao, bất kể chất liệu), bột màu trắng, hóa chất không rõ nguồn gốc, hóa chất dễ cháy nổ (bình gas...), gỗ quý, chất kích thích, động thực vật tươi sống. "
     "Hàng hiệu / điện tử cao cấp (tai nghe, camera, pin sạc dự phòng hãng cao cấp): CHỈ NHẬN kí gửi 1-2kg, giá trị dưới 2.000.000đ. Vượt quá giới hạn → báo manual_review. "
     "Hàng chứa Pin / Nam châm / Chất lỏng / Bột / Gel: KHÔNG đi gói nhanh (fast), chỉ dùng standard/bundle/lot. "
-    "Hàng dễ vỡ (thủy tinh, gốm, điện tử dễ vỡ): tư vấn đóng gỗ hoặc túi khí, ghi chú trong product_description để tính phí đóng gói nếu cần. "
-    "Hàng nhẹ cồng kềnh (thú bông, thùng, hộp, vali rỗng): tính theo KLQĐ — không báo giá fast vì sẽ rất đắt, nên dùng standard/bundle."
+    "GHI CHÚ theo nhóm hàng — khi product_description thuộc nhóm nào, THÊM cảnh báo vào message_to_customer: "
+    "Nhóm DỄ VỠ (thủy tinh, gốm, men sứ, gỗ ép — ly, chén, bóng đèn, lavabo, bồn tắm, kệ gỗ, tủ gỗ…): khuyến nghị đóng gỗ hoặc túi khí, Nhanshiphang không chịu trách nhiệm nếu không đóng gói. "
+    "Nhóm DỄ MÓP (inox mỏng rỗng, nhôm rỗng, nhựa giòn rỗng — chảo, nồi, bình đun nước, bình thủy, hộp nhựa…): khuyến nghị đóng gỗ hoặc túi khí. "
+    "Nhóm GIÁ TRỊ CAO DỄ MÓC (camera, đồng hồ, linh kiện máy tính, tivi, tủ lạnh): khuyến nghị đóng gỗ, tự chịu trách nhiệm nếu mất hoặc hỏng. "
+    "Nhóm DỄ BỊ RẠCH THỦNG (hàng fake quần áo/giày dép/túi xách, hàng có thương hiệu với vỏ hộp khó thay thế — đồ chơi mô hình thương hiệu Mỹ/Nhật…): cân nhắc gói bảo vệ bổ sung. "
+    "Nhóm DỄ BUNG / THẤM / LÂY LAN (hóa chất như mực in/hương liệu, bột có màu sắc sặc sỡ/gia vị): không đóng chung với hàng khác, cần đóng túi kín. "
+    "NHẮC KHÁCH cân nhắc kĩ lưỡng việc thêm phí đóng gỗ hoặc đóng túi khí để tránh tổn thất trong quá trình vận chuyển."
 )
 
 

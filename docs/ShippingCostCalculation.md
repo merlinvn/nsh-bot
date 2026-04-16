@@ -3,10 +3,8 @@
 1. 🧾 QUY ĐỊNH KÍ GỬI HÀNG
    1.1 Thông tin bắt buộc khai báo
    Loại hàng
-   Số lượng
    Trọng lượng (KG thật)
    Kích thước (Dài × Rộng × Cao)
-   Giá trị hàng
 
 1.2 Hàng cấm vận chuyển
 Vũ khí (súng, dao…)

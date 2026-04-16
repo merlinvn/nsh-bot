@@ -359,6 +359,50 @@ class TestCalculateQuote:
         result = calculate_quote("nsh", input_data, default_config)
         assert result.status == "rejected"
 
+    def test_fragile_glass_returns_note(self, default_config):
+        """Glass/ceramic products should get a fragility warning note."""
+        input_data = QuoteInput(
+            service_type="fast",
+            actual_weight_kg=5,
+            length_cm=30,
+            width_cm=30,
+            height_cm=30,
+            product_description="ly thủy tinh",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "quoted"
+        assert len(result.notes) > 0
+        assert any("dễ vỡ" in note for note in result.notes)
+
+    def test_high_value_electronics_returns_note(self, default_config):
+        """Camera/TV should get high-value warning note."""
+        input_data = QuoteInput(
+            service_type="standard",
+            actual_weight_kg=10,
+            length_cm=100,
+            width_cm=60,
+            height_cm=40,
+            product_description="tivi Samsung",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "quoted"
+        assert len(result.notes) > 0
+        assert any("giá trị cao" in note for note in result.notes)
+
+    def test_no_notes_for_normal_product(self, default_config):
+        """Regular clothing should have no fragility notes."""
+        input_data = QuoteInput(
+            service_type="bundle",
+            actual_weight_kg=3,
+            length_cm=40,
+            width_cm=30,
+            height_cm=15,
+            product_description="quần áo",
+        )
+        result = calculate_quote("nsh", input_data, default_config)
+        assert result.status == "quoted"
+        assert len(result.notes) == 0
+
     def test_standard_tier_250kg_correct_price(self, default_config):
         """Standard tier at 250kg bracket uses 50,500 not 40,500."""
         # 50kg fits in first bracket (50kg tier = 52500)

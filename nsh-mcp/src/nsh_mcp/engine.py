@@ -34,4 +34,5 @@ async def mcp_calculate_shipping_quote(
         "missing_fields": result.missing_fields,
         "reason": result.reason,
         "quote_data": result.quote_data,
+        "notes": result.notes,
     }
