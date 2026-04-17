@@ -1,6 +1,6 @@
 # NeoChat Platform — Deployment Guide
 
-**Last Updated:** 2026-04-13
+**Last Updated:** 2026-04-17
 
 ---
 
@@ -261,6 +261,33 @@ Or delete and recreate:
 docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
   --username admin --password 'NewPassword' --force
 ```
+
+---
+
+## Important Gotchas
+
+### Next.js `NEXT_PUBLIC_*` vars are baked at build time
+
+`NEXT_PUBLIC_*` environment variables are embedded during `npm run build`, **not** at container startup. Setting them in `environment:` or `.env` will not work.
+
+Always pass them as Docker build args:
+
+```yaml
+frontend:
+  build:
+    context: .
+    dockerfile: Dockerfile.frontend
+    args:
+      NEXT_PUBLIC_API_URL: https://yourdomain.com   # baked into JS at build time
+```
+
+### Alembic migration conflicts
+
+If `alembic upgrade head` fails with `KeyError: 'b7de17372549'` or `Multiple head revisions`, there is a duplicate revision conflict. Check `alembic/versions/` for multiple migrations claiming the same `revision` ID. Resolve by renumbering conflicting migrations to unique sequential IDs and ensuring the chain is linear.
+
+### Prod compose must include `nsh-mcp` and `MCP_SERVER_URLS`
+
+The prod compose file must contain the `nsh-mcp` service and `MCP_SERVER_URLS` env var in `x-common-env`. Without these, workers cannot reach the MCP server and all tool calls will fail.
 
 ---
 
