@@ -31,6 +31,7 @@ x-common-env: &common-env
   ADMIN_MAX_LOGIN_ATTEMPTS: ${ADMIN_MAX_LOGIN_ATTEMPTS:-5}
   ADMIN_LOCKOUT_MINUTES: ${ADMIN_LOCKOUT_MINUTES:-15}
   ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE: ${ADMIN_LOGIN_RATE_LIMIT_PER_MINUTE:-10}
+  MCP_SERVER_URLS: ${MCP_SERVER_URLS:-http://nsh-mcp:8080}
 
 x-worker-env: &worker-env
   <<: *common-env
@@ -94,6 +95,34 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+  nsh-mcp:
+    build:
+      context: ./nsh-mcp
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      NSH_MCP_DATA_DIR: /app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   api:
     build:
