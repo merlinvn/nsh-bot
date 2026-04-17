@@ -1,7 +1,7 @@
 """Add judgment column to evaluation_test_cases.
 
-Revision ID: 008_add_judgment_to_test_cases
-Revises: 007_add_evaluation_tables
+Revision ID: 010
+Revises: 009
 Create Date: 2026-04-13
 """
 from typing import Sequence, Union
@@ -9,8 +9,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "008_add_judgment_to_test_cases"
-down_revision: Union[str, None] = "007_add_evaluation_tables"
+revision: str = "010"
+down_revision: Union[str, None] = "009"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

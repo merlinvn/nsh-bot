@@ -1,14 +1,15 @@
 """Add user_id_by_app to zalo_users table."""
 from alembic import op
+import sqlalchemy as sa
 
-revision = "007"
-down_revision = "b7de17372549"
+revision = "008"
+down_revision = "007"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("zalo_users", op.Column("user_id_by_app", op.String(64), nullable=True))
+    op.add_column("zalo_users", sa.Column("user_id_by_app", sa.String(64), nullable=True))
 
 
 def downgrade() -> None:
