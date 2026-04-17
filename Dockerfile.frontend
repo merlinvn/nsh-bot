@@ -2,6 +2,9 @@ FROM node:20
 
 WORKDIR /app
 
+ARG NEXT_PUBLIC_API_URL=https://nsh.nguyentd.com
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 # Install curl for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 

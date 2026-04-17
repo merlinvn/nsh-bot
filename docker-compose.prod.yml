@@ -260,8 +260,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    environment:
-      NEXT_PUBLIC_API_URL: https://nsh.nguyentd.com
+      args:
+        NEXT_PUBLIC_API_URL: https://nsh.nguyentd.com
     depends_on:
       api:
         condition: service_healthy
