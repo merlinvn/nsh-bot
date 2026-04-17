@@ -224,6 +224,7 @@ All `/admin/*` routes require session cookie authentication (except login).
 - **Admin Session**: Sessions are Redis-backed (24h fixed TTL). Cookie is httpOnly + SameSite=Lax. CSRF token returned in login response body, sent as `X-CSRF-Token` header on state-changing requests.
 - **LLM Worker**: Playground chat and evaluation LLM calls go through `llm.process` queue. Response delivered via Redis pub/sub for playground/evaluation, via `outbound.send` for zalo channel.
 - **LLM Judge (Evaluation)**: Each evaluation test case is judged by a second LLM call asking if actual answer matches expected answer semantically. Returns PASS/FAIL with reasoning in Vietnamese.
+- **Prompt Auto-population**: `PromptManager._load_from_db()` auto-inserts default prompts (`system`, `tool_policy`, `fallback`) as version 1 if missing from DB — including after deletion from the frontend.
 
 ## Testing
 

@@ -1,6 +1,6 @@
 # NeoChat Platform — System Specification
 
-**Last Updated:** 2026-04-15
+**Last Updated:** 2026-04-17
 **Status:** Phase 2 (mostly complete)
 
 ---
@@ -142,8 +142,8 @@ All LLM calls go through `llm.process` with a `channel` field that determines re
 ### `zalo` Channel
 
 - **Source:** ConversationWorker (not API)
-- **Payload:** `inbound_message_id`, `outbound_message_id`, `system_prompt`, `conversation_history`, `inbound_text`
-- **Worker:** `LLMProcessor._process_zalo()` — runs `AgentRunner` with MCP tools (`calculate_shipping_quote`, `explain_quote_breakdown`), records ToolCalls in DB, publishes to Redis
+- **Payload:** `channel`, `correlation_id`, `inbound_message_id`, `outbound_message_id`, `external_user_id`, `zalo_message_id`, `system_prompt`, `conversation_history`, `inbound_text`
+- **Worker:** `LLMProcessor._process_zalo()` — runs `AgentRunner` with MCP tools (`calculate_shipping_quote`), records ToolCalls in DB, publishes to Redis
 - **Response:** `{text, token_usage, latency_ms}`
 - **Note:** ConversationWorker handles `outbound.send` publish after receiving Redis response
 
@@ -250,8 +250,7 @@ All `/api/*` routes require session cookie authentication (except login).
 - **Messages**: `id`, `conversation_id`, `direction` (inbound/outbound), `text`, `message_id`, `model`, `latency_ms`, `token_usage` (JSON), `error`, `prompt_version`, `created_at`
 - **ToolCalls**: `id`, `message_id`, `tool_name`, `input` (JSON), `output` (JSON), `success`, `latency_ms`, `created_at`
 - **DeliveryAttempts**: `id`, `message_id`, `status`, `attempt_no`, `response`, `error`, `created_at`
-- **Prompts**: `id`, `name`, `template`, `created_at`, `updated_at`, `active_version`
-- **PromptVersions**: `id`, `prompt_id`, `version`, `template`, `created_at`
+- **Prompts**: `id`, `name`, `template`, `created_at`, `updated_at`, `active_version`, `versions` (JSON array — no separate table)
 - **AdminUsers**: `id`, `username`, `password_hash`, `is_active`, `last_login_at`, `failed_login_attempts`, `locked_until`, `created_at`
 
 ### Benchmark
@@ -274,27 +273,38 @@ Shared LLM loop used by LLMWorker for all channels.
 
 - **Max steps:** 3
 - **Max tool calls per step:** 2
-- **Tool backend:** `MCPToolBackend` — routes all 6 tools across 3 MCP domains
+- **Tool backend:** `MCPToolBackend` — routes all 5 tools across 3 MCP domains
 - **Tool call recording:** Persisted to `tool_calls` table via `on_tool_call` callback
 
-### MCP Tools (all 6 tools MCP-based)
+### MCP Tools (5 tools — standalone HTTP MCP server)
+
+The MCP server runs as a separate Docker service (`nsh-mcp`). Workers call it via HTTP JSON-RPC at `http://nsh-mcp:8080/rpc`.
 
 | Domain | Tool | Handler |
 |--------|------|---------|
-| Shipping | `calculate_shipping_quote` | `mcp/engine.py` → pricing engine |
-| Shipping | `explain_quote_breakdown` | `mcp/engine.py` → pricing engine |
-| Customer | `lookup_customer` | `mcp/customer.py` |
-| Customer | `get_order_status` | `mcp/customer.py` |
-| Support | `create_support_ticket` | `mcp/support.py` |
-| Support | `handoff_request` | `mcp/support.py` |
+| Shipping | `calculate_shipping_quote` | `nsh-mcp/src/nsh_mcp/engine.py` |
+| Customer | `lookup_customer` | `nsh-mcp/src/nsh_mcp/customer.py` |
+| Customer | `get_order_status` | `nsh-mcp/src/nsh_mcp/customer.py` |
+| Support | `create_support_ticket` | `nsh-mcp/src/nsh_mcp/support.py` |
+| Support | `handoff_request` | `nsh-mcp/src/nsh_mcp/support.py` |
 
-`MCPToolBackend` (`app/workers/mcp/backend.py`) is the single execution entry point.
-`MCPClient.list_tools()` (`app/workers/mcp/client.py`) aggregates all tool definitions.
+`MCPToolBackend` (`app/workers/mcp_client.py`) is the async tool execution entry point used by workers.
+`list_tools()` in the same file fetches tool definitions from the MCP server at startup (cached in-process).
 
 ### Pricing Engine
 
-`app/workers/engine/pricing.py` — pure `QuoteInput → QuoteResult`, no I/O.
-`app/workers/mcp/cache.py` — Redis cache-aside, SHA256 key, 900s TTL, fail-open.
+`nsh-mcp/src/nsh_mcp/pricing/pricing.py` — pure `QuoteInput → QuoteResult`, no I/O.
+`nsh-mcp/src/nsh_mcp/pricing/config.py` — tenant config loaded from JSON files, cached in-process dict (`_config_cache`), 900s TTL per tenant, fail-open.
+
+### Prompt Management
+
+`PromptManager` (`app/workers/conversation/prompts.py`) loads and caches prompts from the `prompts` table.
+
+- **Cache TTL:** 5 minutes (in-memory, not Redis)
+- **Default prompts:** `system`, `tool_policy`, `fallback`
+- **Auto-population (upsert):** If any of the 3 defaults are absent from DB, `_load_from_db()` inserts the hardcoded default as version 1 and commits it. On next cache refresh (after TTL or deletion), the default is re-inserted if missing — i.e., deleting from the frontend causes automatic re-population on next access.
+- **Startup:** Lazy — no automatic load at startup; prompts load on first request.
+- **Versioning:** Versions start at 1.
 
 ---
 
@@ -303,12 +313,12 @@ Shared LLM loop used by LLMWorker for all channels.
 | Key Pattern | Purpose | TTL |
 |-------------|---------|-----|
 | `session:{session_id}` | Admin session data | 24h fixed |
-| `prompt:cache:{version}` | Cached prompt templates | none |
-| `dedup:zalo:{message_id}` | Zalo message deduplication | 5 min |
+| `zalo:dedup:{message_id}` | Zalo inbound message deduplication | 24h |
+| `zalo:ack:{message_id}` | Zalo webhook ACK idempotency | 24h |
+| `outbound:sent:{outbound_message_id}` | Outbound message idempotency (prevent double-send) | 24h |
 | `worker:heartbeat:{name}` | Worker alive signal | none (detected by age) |
 | `llm:response:{request_id}` | LLM response pub/sub channel | none |
 | `monitoring:metrics:prev` | Previous metrics for trend | 60s |
-| `quote:{tenant_id}:{hash}` | Shipping quote cache | 900s |
 
 ---
 
@@ -368,4 +378,4 @@ docker-compose exec api uv run python app/api/scripts/create_admin_user.py \
 
 - **LLM Judge (Evaluation):** Each test case judged by second LLM call asking if actual answer semantically matches expected. Returns Vietnamese PASS/FAIL with reasoning.
 
-- **MCP Architecture:** `app/workers/engine/` — pure pricing logic. `app/workers/mcp/` — per-domain MCP servers (shipping, customer, support). `MCPToolBackend` routes all 6 tools. `MCPClient` aggregates tool definitions. Tenant pricing in `config/tenants/{tenant_id}/pricing_rules.json`. Quote caching via Redis (900s TTL).
+- **MCP Architecture:** `nsh-mcp/` — standalone MCP HTTP server (separate Docker service). `app/workers/mcp_client.py` — worker-side MCP client. `MCPToolBackend` executes tools via HTTP JSON-RPC. `list_tools()` aggregates tool definitions. Tenant pricing in `nsh-mcp/data/{tenant_id}/pricing_rules.json`. Config cached in-process (900s TTL), fail-open.

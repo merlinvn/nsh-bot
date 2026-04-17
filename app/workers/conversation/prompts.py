@@ -2,10 +2,12 @@
 
 Prompts are loaded from the `prompts` table at startup and cached.
 Cache is refreshed every 5 minutes or on cache miss.
+Auto-populates default prompts if missing from DB.
 """
 
 import asyncio
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -121,61 +123,69 @@ class PromptManager:
                         )
 
     async def _load_from_db(self) -> None:
-        """Load active prompts from the database."""
+        """Load active prompts from the database. Auto-populates defaults if missing."""
         async with db_session() as db:
-            # Load system prompt
+            # Load system prompt — upsert if missing
             system_prompt_row = await db.execute(
                 select(Prompt).where(Prompt.name == "system")
             )
             system_prompt = system_prompt_row.scalar_one_or_none()
-            if system_prompt and system_prompt.versions:
-                versions = system_prompt.versions
-                active_version_str = system_prompt.active_version
-                for version_entry in versions:
-                    if str(version_entry.get("version")) == active_version_str:
-                        self._cache._system_prompt = version_entry.get(
-                            "template", system_prompt.template
-                        )
-                        self._cache._system_version = active_version_str
-                        break
-                else:
-                    # Active version not found in versions array, fall back to template
-                    self._cache._system_prompt = system_prompt.template
-                    self._cache._system_version = system_prompt.active_version
-            elif system_prompt:
-                self._cache._system_prompt = system_prompt.template
-                self._cache._system_version = system_prompt.active_version
+            if not system_prompt:
+                default = self._get_default_system_prompt()
+                now = datetime.now(timezone.utc).isoformat()
+                system_prompt = Prompt(
+                    name="system",
+                    template=default,
+                    active_version="1",
+                    versions=[{"version": 1, "template": default, "created_at": now}],
+                )
+                db.add(system_prompt)
+                await db.flush()
+                logger.info("auto_populated_system_prompt")
 
-            # Load tool policy prompt
+            self._cache._system_prompt = system_prompt.template
+            self._cache._system_version = system_prompt.active_version
+
+            # Load tool policy prompt — upsert if missing
             tool_policy_row = await db.execute(
                 select(Prompt).where(Prompt.name == "tool_policy")
             )
             tool_policy = tool_policy_row.scalar_one_or_none()
-            if tool_policy and tool_policy.versions:
-                versions = tool_policy.versions
-                active_version_str = tool_policy.active_version
-                for version_entry in versions:
-                    if str(version_entry.get("version")) == active_version_str:
-                        self._cache._tool_policy_prompt = version_entry.get(
-                            "template", tool_policy.template
-                        )
-                        self._cache._tool_policy_version = active_version_str
-                        break
-                else:
-                    self._cache._tool_policy_prompt = tool_policy.template
-                    self._cache._tool_policy_version = tool_policy.active_version
-            elif tool_policy:
-                self._cache._tool_policy_prompt = tool_policy.template
-                self._cache._tool_policy_version = tool_policy.active_version
+            if not tool_policy:
+                default = self._get_default_tool_policy_prompt()
+                now = datetime.now(timezone.utc).isoformat()
+                tool_policy = Prompt(
+                    name="tool_policy",
+                    template=default,
+                    active_version="1",
+                    versions=[{"version": 1, "template": default, "created_at": now}],
+                )
+                db.add(tool_policy)
+                await db.flush()
+                logger.info("auto_populated_tool_policy_prompt")
 
-            # Load fallback prompt
+            self._cache._tool_policy_prompt = tool_policy.template
+            self._cache._tool_policy_version = tool_policy.active_version
+
+            # Load fallback prompt — upsert if missing
             fallback_row = await db.execute(
                 select(Prompt).where(Prompt.name == "fallback")
             )
             fallback = fallback_row.scalar_one_or_none()
-            if fallback:
-                self._cache._fallback_prompt = fallback.template
-                self._cache._fallback_version = fallback.active_version
+            if not fallback:
+                default_fallback = "Xin lỗi, hệ thống đang bận. Vui lòng thử lại sau ít phút."
+                fallback = Prompt(
+                    name="fallback",
+                    template=default_fallback,
+                    active_version="1",
+                    versions=[{"version": 1, "template": default_fallback, "created_at": datetime.now(timezone.utc).isoformat()}],
+                )
+                db.add(fallback)
+                await db.flush()
+                logger.info("auto_populated_fallback_prompt")
+
+            self._cache._fallback_prompt = fallback.template
+            self._cache._fallback_version = fallback.active_version
 
             self._cache._last_refresh = time.time()
 
